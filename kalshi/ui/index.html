@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BTC Bot Dashboard</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <h1>BTC Bot</h1>
+      <p id="mode-badge" class="badge" data-mode="unknown">Connecting…</p>
+    </div>
+  </header>
+
+  <!-- Screen readers hear important changes here (status changes, new trades, saves). -->
+  <div id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <main id="main" class="wrap" tabindex="-1">
+
+    <section class="card status-card" aria-labelledby="status-heading">
+      <h2 id="status-heading" class="visually-hidden">Bot status</h2>
+      <div class="status-row">
+        <span id="status-icon" class="status-icon" aria-hidden="true"></span>
+        <div class="status-text">
+          <p id="status-title" class="status-title">Loading…</p>
+          <p id="status-detail" class="muted"></p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="toggle-btn" type="button" class="btn btn-primary" disabled>Pause trading</button>
+        <p id="toggle-help" class="muted small">Pausing stops new trades. A trade already open still finishes or hits its stop-loss.</p>
+      </div>
+      <p id="updated" class="muted small"></p>
+    </section>
+
+    <section class="card" aria-labelledby="today-heading">
+      <h2 id="today-heading">Today</h2>
+      <dl class="stats">
+        <div class="stat"><dt>Net result</dt><dd id="stat-pnl">–</dd></div>
+        <div class="stat"><dt>Trades</dt><dd id="stat-trades">–</dd></div>
+        <div class="stat"><dt>Won</dt><dd id="stat-wins">–</dd></div>
+        <div class="stat"><dt>Lost or stopped</dt><dd id="stat-losses">–</dd></div>
+      </dl>
+      <p class="muted small">"Today" runs midnight to midnight UTC.</p>
+    </section>
+
+    <section class="card" aria-labelledby="market-heading">
+      <h2 id="market-heading">Right now</h2>
+      <div id="market-empty" class="muted">No market open yet.</div>
+      <div id="market" hidden>
+        <p class="market-title"><span id="mkt-title"></span></p>
+        <dl class="stats">
+          <div class="stat"><dt>Price to beat</dt><dd id="mkt-strike">–</dd></div>
+          <div class="stat"><dt>Up (YES) costs</dt><dd id="mkt-yes">–</dd></div>
+          <div class="stat"><dt>Down (NO) costs</dt><dd id="mkt-no">–</dd></div>
+          <div class="stat"><dt>Time left</dt><dd id="mkt-left">–</dd></div>
+        </dl>
+        <p class="muted small">Up wins if BTC ends at or above the price to beat. Down wins if it ends below. Each winning contract pays $1.</p>
+        <label for="mkt-progress" class="small">Progress through this 15-minute window</label>
+        <progress id="mkt-progress" max="15" value="0"></progress>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="checks-heading">
+      <h2 id="checks-heading">Safety checks</h2>
+      <p class="muted">The bot only buys when <strong>every</strong> check passes. These guard against sudden flips.</p>
+      <p id="checks-note"></p>
+      <ul id="checks" class="checks"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="trades-heading">
+      <h2 id="trades-heading">Recent trades</h2>
+      <p id="trades-empty" class="muted">No finished trades yet.</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Trades table (scrolls sideways on small screens)" hidden id="trades-wrap">
+        <table>
+          <caption class="visually-hidden">Most recent finished trades, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Bet</th>
+              <th scope="col" class="num">Contracts</th>
+              <th scope="col" class="num">Paid each</th>
+              <th scope="col">Result</th>
+              <th scope="col" class="num">Profit or loss</th>
+            </tr>
+          </thead>
+          <tbody id="trades"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Settings</h2>
+      <form id="settings-form" novalidate>
+        <div id="form-errors" class="error-summary" tabindex="-1" hidden>
+          <h3>Please fix these:</h3>
+          <ul id="form-error-list"></ul>
+        </div>
+
+        <div class="field">
+          <label for="stake">Amount per trade (dollars)</label>
+          <p id="stake-hint" class="hint">Between $1 and $25. The most a single trade can lose.</p>
+          <input id="stake" name="stake" type="number" inputmode="decimal" min="1" max="25" step="0.5"
+                 aria-describedby="stake-hint stake-error" required>
+          <p id="stake-error" class="field-error" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="max_daily_loss">Daily loss limit (dollars)</label>
+          <p id="max_daily_loss-hint" class="hint">The bot pauses for the rest of the day after losing this much.</p>
+          <input id="max_daily_loss" name="max_daily_loss" type="number" inputmode="decimal" min="1" max="100" step="1"
+                 aria-describedby="max_daily_loss-hint max_daily_loss-error" required>
+          <p id="max_daily_loss-error" class="field-error" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="max_trades">Trades per day</label>
+          <p id="max_trades-hint" class="hint">A whole number from 1 to 50.</p>
+          <input id="max_trades" name="max_trades" type="number" inputmode="numeric" min="1" max="50" step="1"
+                 aria-describedby="max_trades-hint max_trades-error" required>
+          <p id="max_trades-error" class="field-error" hidden></p>
+        </div>
+
+        <button type="submit" class="btn">Save settings</button>
+        <p id="save-msg" class="small" aria-live="off"></p>
+      </form>
+    </section>
+
+    <section class="card note" aria-labelledby="risk-heading">
+      <h2 id="risk-heading">Good to know</h2>
+      <ul>
+        <li>Most trades win a few cents. A loss can cost almost the whole amount per trade.</li>
+        <li>The strategy's edge is small and comes from past data. It is not guaranteed.</li>
+        <li>Switching to real money can only be done from the command line, on purpose.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

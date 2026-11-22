@@ -43,6 +43,9 @@ from kalshi_client import DEMO, PROD, fnum, taker_fee
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 LOG = DATA / "bot_trades.jsonl"
+STATE = DATA / "bot_state.json"        # what the bot is doing now (read by dashboard.py)
+SETTINGS = DATA / "bot_settings.json"  # stake and limits (written by dashboard.py)
+LIMITS = {"stake": (1.0, 25.0), "max_daily_loss": (1.0, 100.0), "max_trades": (1, 50)}
 STOP_FILE = HERE / "STOP"
 SERIES = "KXBTC15M"
 CB = "https://api.exchange.coinbase.com/products/BTC-USD"
@@ -189,7 +192,69 @@ class Bot:
         self.pos: dict | None = None
         self.mid_hist: dict[str, list[tuple[float, float]]] = {}
         self.pending: list[dict] = []   # positions waiting for settlement
+        self.check: dict = {}            # latest flip-guard results, for the dashboard
+        self.market_view: dict = {}
+        self.paused = ""
+        self.started = now()
+        self.last_error = ""
         DATA.mkdir(exist_ok=True)
+        self.recover()
+
+    def recover(self) -> None:
+        """Pick up trades left open by a previous run (crash or restart)."""
+        if not LOG.exists():
+            return
+        rows = [json.loads(x) for x in LOG.read_text().splitlines() if x.strip()]
+        done = {r["ticker"] for r in rows if r["mode"] == self.mode and r["kind"] in ("settle", "stop")}
+        for r in rows:
+            if r["mode"] != self.mode or r["kind"] != "entry" or r["ticker"] in done:
+                continue
+            p = {k: r[k] for k in ("ticker", "side", "price", "p_model", "z", "minute", "spot",
+                                   "strike", "close_ts", "count", "cost") if k in r}
+            if now() >= p["close_ts"]:
+                self.pending.append(p)
+            else:
+                self.pos = p
+            log(f"recovered open trade {p['ticker']} {p['side'].upper()} x{p['count']}")
+
+    # ---- dashboard link ----
+    def load_settings(self) -> None:
+        """Apply stake/limit changes saved by the dashboard, clamped to safe ranges."""
+        try:
+            cfg = json.loads(SETTINGS.read_text())
+        except (OSError, ValueError):
+            return
+        for key, (lo, hi) in LIMITS.items():
+            if key in cfg:
+                try:
+                    v = min(max(type(lo)(cfg[key]), lo), hi)
+                except (TypeError, ValueError):
+                    continue
+                if v != getattr(self, key):
+                    log(f"setting {key} -> {v}")
+                    setattr(self, key, v)
+
+    def write_state(self) -> None:
+        rows = self.today_rows()
+        closed = [r for r in rows if r["kind"] in ("settle", "stop")]
+        state = dict(
+            updated=now(), started=self.started, mode=self.mode, paused=self.paused,
+            stopped_by_user=STOP_FILE.exists(), error=self.last_error,
+            settings=dict(stake=self.stake, max_daily_loss=self.max_daily_loss,
+                          max_trades=self.max_trades),
+            limits={k: list(v) for k, v in LIMITS.items()},
+            today=dict(trades=sum(r["kind"] == "entry" for r in rows),
+                       wins=sum(r["pnl"] > 0 for r in closed),
+                       losses=sum(r["pnl"] <= 0 for r in closed),
+                       pnl=sum(r["pnl"] for r in closed)),
+            market=self.market_view, check=self.check,
+            position=({k: self.pos[k] for k in ("ticker", "side", "price", "count", "close_ts")}
+                      if self.pos else None),
+            waiting_settlement=len(self.pending),
+        )
+        tmp = STATE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state))
+        tmp.replace(STATE)
 
     # ---- bookkeeping ----
     def today_rows(self) -> list[dict]:
@@ -206,14 +271,14 @@ class Bot:
 
     def can_trade(self) -> tuple[bool, str]:
         if STOP_FILE.exists():
-            return False, "kill switch (STOP file) present"
+            return False, "Paused by you"
         rows = self.today_rows()
         pnl = sum(r.get("pnl", 0.0) for r in rows if r["kind"] in ("settle", "stop"))
         entries = sum(1 for r in rows if r["kind"] == "entry")
         if pnl <= -self.max_daily_loss:
-            return False, f"daily loss cap hit ({pnl:+.2f})"
+            return False, f"Daily loss limit reached ({pnl:+.2f} dollars). Resumes tomorrow (UTC)."
         if entries >= self.max_trades:
-            return False, "max trades for today reached"
+            return False, "Trade limit for today reached. Resumes tomorrow (UTC)."
         return True, ""
 
     # ---- the decision ----
@@ -228,17 +293,34 @@ class Bot:
         h.append((now(), mid))
 
         if not (ENTRY_MINUTES[0] <= minute < ENTRY_MINUTES[1]):
+            wait = (ENTRY_MINUTES[0] - minute) if minute < ENTRY_MINUTES[0] else (15 - minute)
+            self.check = dict(stage="waiting", ticker=m["ticker"], minute=minute,
+                              note=(f"Checks start at minute 10 (in {wait:.0f} min)"
+                                    if minute < ENTRY_MINUTES[0] else "Too late to enter this window"))
             return None
         spot, k_cb, sig = self.btc.spot(), self.btc.strike_proxy(o), self.btc.sigma_1m()
         if k_cb is None or sig <= 0:
+            self.check = dict(stage="waiting", ticker=m["ticker"], minute=minute,
+                              note="Waiting for BTC price data")
             return None
         t_eff = max((c - now()) / 60 - 2 / 3, 1 / 3)
         z = math.log(spot / k_cb) / (VOL_SCALE * sig * math.sqrt(t_eff))
         p_yes = phi(z)
 
+        fav_side, fav_px = ("yes", ask) if mid >= 0.5 else ("no", 1 - bid)
+        self.check = dict(stage="checking", ticker=m["ticker"], minute=minute, side=fav_side,
+                          price=fav_px, guards=[dict(
+                              name="Favorite priced 80-97 cents",
+                              ok=MIN_PRICE <= fav_px <= MAX_PRICE,
+                              detail=f"{fav_side.upper()} costs {fav_px * 100:.1f} cents")])
         for side, px, p, zs in (("yes", ask, p_yes, z), ("no", 1 - bid, 1 - p_yes, -z)):
             if not (MIN_PRICE <= px <= MAX_PRICE):
                 continue
+            g = self.check["guards"]
+            g.append(dict(name="BTC far from the strike", ok=zs >= Z_MIN,
+                          detail=f"{zs:.1f} standard deviations away (needs {Z_MIN:.0f})"))
+            g.append(dict(name="Price is fair", ok=p >= px + taker_fee(px),
+                          detail=f"model {p * 100:.1f}% vs cost {100 * (px + taker_fee(px)):.1f}% with fee"))
             why = []
             if zs < Z_MIN:
                 why.append(f"BTC only {zs:.2f} sd from strike (need {Z_MIN})")
@@ -249,11 +331,19 @@ class Bot:
                 drop = (old[-1] - mid) if side == "yes" else (mid - old[-1])
                 if drop > MOMENTUM_DROP:
                     why.append(f"price fell {drop * 100:.0f}c in 2 min (flip under way)")
+                g.append(dict(name="No flip under way", ok=drop <= MOMENTUM_DROP,
+                              detail=f"price moved {-drop * 100:+.1f} cents in 2 minutes"))
+            else:
+                g.append(dict(name="No flip under way", ok=None, detail="collecting 2 minutes of prices"))
             mv = self.btc.move_since(30)
             if mv is not None:
                 toward = -mv if side == "yes" else mv
                 if toward > JUMP_SIGMAS * sig * spot:
                     why.append(f"BTC jumped ${toward:,.0f} toward strike in 30s")
+                g.append(dict(name="No sudden BTC jump", ok=toward <= JUMP_SIGMAS * sig * spot,
+                              detail=f"BTC moved ${toward:+,.0f} toward the strike in 30 s"))
+            else:
+                g.append(dict(name="No sudden BTC jump", ok=None, detail="collecting 30 seconds of prices"))
             if why:
                 log(f"skip {side.upper()} @ {px:.3f} min {minute:.1f}: " + "; ".join(why))
                 continue
@@ -291,9 +381,14 @@ class Bot:
             return
         m = self.k.market(p["ticker"])
         bid, ask = fnum(m.get("yes_bid_dollars")), fnum(m.get("yes_ask_dollars"))
+        self.market_view.update(yes_bid=bid, yes_ask=ask)
         if bid is None or ask is None:
             return
         sell_px = bid if p["side"] == "yes" else 1 - ask
+        self.check = dict(stage="holding", ticker=p["ticker"], side=p["side"], price=sell_px,
+                          note=(f"Holding {p['count']} {p['side'].upper()} contracts. "
+                                f"They would sell for {sell_px * 100:.1f} cents now; "
+                                f"stop-loss triggers at {STOP_PRICE * 100:.0f} cents."))
         if sell_px <= STOP_PRICE:
             log(f"FLIP: {p['side'].upper()} now sells at {sell_px:.3f} - stopping out")
             if self.mode != "paper":
@@ -332,6 +427,12 @@ class Bot:
                 else:
                     ok, why = self.can_trade()
                     m = self.k.current_market()
+                    if m:
+                        self.market_view = dict(
+                            ticker=m["ticker"], title=m.get("title"),
+                            strike=fnum(m.get("floor_strike")),
+                            open_ts=iso_ts(m["open_time"]), close_ts=iso_ts(m["close_time"]),
+                            yes_bid=fnum(m.get("yes_bid_dollars")), yes_ask=fnum(m.get("yes_ask_dollars")))
                     if m and int(now()) // 60 != getattr(self, "_hb", None):
                         self._hb = int(now()) // 60
                         mi = (now() - iso_ts(m["open_time"])) / 60
@@ -342,11 +443,18 @@ class Bot:
                             sig = self.evaluate(m)
                             if sig:
                                 self.enter(sig)
-                    elif not ok:
+                    if not ok and why != self.paused:
                         log(f"paused: {why}")
-                        time.sleep(55)
+                    self.paused = "" if ok else why
+                self.last_error = ""
             except Exception as e:  # keep running through transient errors
                 log(f"error: {e}")
+                self.last_error = str(e)[:200]
+            try:
+                self.load_settings()
+                self.write_state()
+            except Exception as e:
+                log(f"state error: {e}")
             time.sleep(5)
 
 

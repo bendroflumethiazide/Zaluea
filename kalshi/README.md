@@ -11,6 +11,7 @@ that trades the one pattern that held up in testing.
 | `collect_esports.py` | Downloads settled esports match and map markets with minute prices |
 | `analyze_esports.py` | Writes `reports/esports.md` |
 | `bot.py` | BTC 15-min favorite bot with flip guards (paper / demo / live) |
+| `dashboard.py`, `ui/` | Friendly local dashboard for the bot |
 | `reports/` | The study results and `bot_performance.md` |
 
 ## Setup
@@ -32,6 +33,35 @@ python bot.py --mode demo           # Kalshi demo exchange, fake money
 python bot.py --mode live --i-understand-real-money
 python bot.py --report              # rebuild reports/bot_performance.md
 ```
+
+### Dashboard
+
+Run it in a second terminal, next to the bot:
+
+```bash
+python dashboard.py      # then open http://127.0.0.1:8765
+```
+
+The dashboard shows:
+- what the bot is doing, in plain words
+- today's results
+- the market it's watching
+- every flip-guard check as it runs
+- recent trades
+
+It can pause or resume trading and change the stake and daily limits.
+It cannot switch to real money; that stays a deliberate command-line step.
+It listens only on your own computer and refuses requests from other websites.
+
+**Accessibility (WCAG 2.2 AA):**
+- Tested with axe-core: 0 violations in light, dark and phone layouts.
+- Fully keyboard operable, with a skip link and visible focus rings.
+- Proper headings, labels and table headers throughout.
+- Pass/fail is shown with text and icons, not color alone.
+- Status changes and finished trades are announced to screen readers; the ticking timer is not.
+- Form errors are listed in a summary that links to each field.
+- Follows the system dark mode, reduced-motion and high-contrast settings.
+- Works at 200% text size and on phone screens.
 
 Demo and live need an API key from Kalshi (Account → API Keys):
 
