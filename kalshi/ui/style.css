@@ -1,40 +1,22 @@
-/* Colors meet WCAG 2.2 AA contrast (4.5:1 for text, 3:1 for UI parts) in both themes. */
+/* Dark theme. Colors meet WCAG 2.2 AA contrast (4.5:1 text, 3:1 UI parts). */
 :root {
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --border: #c9cfd8;
-  --text: #16191f;
-  --muted: #475063;
-  --accent: #1d5bbf;
-  --accent-text: #ffffff;
-  --good: #1a6b38;
-  --good-bg: #e6f4ea;
-  --bad: #b3261e;
-  --bad-bg: #fbe9e7;
-  --warn: #7a4a00;
-  --warn-bg: #fff4dc;
-  --focus: #1d5bbf;
+  color-scheme: dark;
+  --bg: #111318;
+  --surface: #1b1f27;
+  --border: #3a4150;
+  --text: #eef0f4;
+  --muted: #b4bccb;
+  --accent: #8db6ff;
+  --accent-text: #0b1530;
+  --good: #74d69a;
+  --good-bg: #13291c;
+  --bad: #ff9a8f;
+  --bad-bg: #33171a;
+  --warn: #f3c562;
+  --warn-bg: #30260f;
+  --focus: #8db6ff;
   --radius: 12px;
   font-size: 100%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111318;
-    --surface: #1b1f27;
-    --border: #3a4150;
-    --text: #eef0f4;
-    --muted: #b4bccb;
-    --accent: #8db6ff;
-    --accent-text: #0b1530;
-    --good: #74d69a;
-    --good-bg: #13291c;
-    --bad: #ff9a8f;
-    --bad-bg: #33171a;
-    --warn: #f3c562;
-    --warn-bg: #30260f;
-    --focus: #8db6ff;
-  }
 }
 
 *, *::before, *::after { box-sizing: border-box; }

@@ -60,7 +60,7 @@ It listens only on your own computer and refuses requests from other websites.
 - Pass/fail is shown with text and icons, not color alone.
 - Status changes and finished trades are announced to screen readers; the ticking timer is not.
 - Form errors are listed in a summary that links to each field.
-- Follows the system dark mode, reduced-motion and high-contrast settings.
+- Dark theme throughout; follows the system reduced-motion and high-contrast settings.
 - Works at 200% text size and on phone screens.
 
 Demo and live need an API key from Kalshi (Account → API Keys):
