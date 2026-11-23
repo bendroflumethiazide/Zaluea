@@ -1,6 +1,6 @@
 # ATLAS implementation plan
 
-Status: **proposal, awaiting your approval.** No ATLAS code exists yet. Nothing here can place an order.
+Status: **approved 2026-11-23.** Nothing in ATLAS can place an order yet.
 
 Guiding rule: **capital preservation first, intelligent trading second, profitability third.** When anything is uncertain, ATLAS does not trade.
 
@@ -130,10 +130,12 @@ Each phase ends with passing tests and a short report. **I stop after each phase
 
 ---
 
-## 5. Decisions I need from you before Phase 2
+## 5. Decisions (confirmed 2026-11-23)
 
-1. **Stock/ETF broker:** Alpaca (recommended), or another you already use?
-2. **Notifications:** pick one. Options: a Discord webhook, Telegram, email, ntfy.sh phone push, or Windows desktop notifications only.
-3. **Limit increases:** OK to use the "raises take effect next accounting day" rule from §2?
-4. **Approval window:** OK with a 60-second default for per-trade approvals?
-5. **Where it lives:** a new `atlas/` folder in this repository, with the old `kalshi/` folder kept for research? (Recommended.)
+1. **Stock/ETF broker:** Alpaca. Paper keys feed the engine's market data; live keys are held only by the gateway.
+2. **Notifications:** Windows desktop notifications.
+3. **Limit changes:** lowering takes effect immediately; raising needs typed confirmation and takes effect at the next accounting day; the absolute ceilings in code cannot be raised from the dashboard.
+4. **Per-trade approval window:** 60 seconds.
+5. **Location:** new `atlas/` folder; `kalshi/` stays for research.
+
+**Dashboard preview built early.** You asked for the app now, so the Phase 7 dashboard exists as a front end running on clearly labelled sample data (`atlas/dashboard`). It has no connection to any exchange or broker and cannot place orders. Each later phase replaces sample panels with real data.

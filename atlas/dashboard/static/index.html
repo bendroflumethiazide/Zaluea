@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATLAS</title>
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#06121f">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <path d="M16 3 29 28H3Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M9.5 20h13" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <h1 class="brand-name">ATLAS</h1>
+      </div>
+      <p class="chip chip-warn" id="env-chip">Preview · sample data</p>
+      <p class="clock" id="clock">–</p>
+      <button type="button" id="stop-btn" class="btn-stop">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+        <span id="stop-label">STOP ALL NEW TRADING</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <div class="layout">
+    <!-- Left: image feed -->
+    <aside class="feed-col" aria-labelledby="feed-heading">
+      <div class="card feed-card">
+        <figure class="feed-hero">
+          <img src="/img/feed.webp" width="736" height="736"
+               alt="Artwork: a dark-haired figure with a crystal hairpiece, looking back over her shoulder in shimmering blue water.">
+          <figcaption class="feed-overlay">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="hero-status">Connecting…</span>
+          </figcaption>
+        </figure>
+        <div class="feed-body">
+          <h2 id="feed-heading">Live feed</h2>
+          <p class="muted small">What ATLAS is doing, newest first.</p>
+          <div class="feed-scroll" role="region" aria-labelledby="feed-heading" tabindex="0">
+            <ol id="feed" class="feed-list"></ol>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main id="main" tabindex="-1">
+      <p class="preview-note" id="preview-note">
+        <strong>Preview.</strong> Everything below is sample data. This dashboard is not connected to Kalshi or Alpaca and cannot place orders.
+      </p>
+
+      <!-- Account -->
+      <section class="card" aria-labelledby="acct-heading">
+        <div class="card-head">
+          <h2 id="acct-heading">Real account</h2>
+          <p class="chip" id="auth-chip">–</p>
+        </div>
+        <dl class="kpis" id="kpis"></dl>
+      </section>
+
+      <!-- Budget -->
+      <section class="card" aria-labelledby="budget-heading">
+        <div class="card-head">
+          <h2 id="budget-heading">Today's budget</h2>
+          <p class="muted small" id="budget-day"></p>
+        </div>
+        <p class="budget-line"><span id="budget-spent" class="big">–</span> <span class="muted" id="budget-of"></span></p>
+        <div class="stack-bar" id="budget-bar" role="img" aria-labelledby="budget-bar-label"></div>
+        <p id="budget-bar-label" class="visually-hidden"></p>
+        <ul class="legend" id="budget-legend"></ul>
+        <p class="muted small">Selling or winning never refills the daily budget. Fees count toward it.</p>
+      </section>
+
+      <div class="two-col">
+        <!-- Safety limits -->
+        <section class="card" aria-labelledby="limits-heading">
+          <h2 id="limits-heading">Safety limits</h2>
+          <ul class="limits" id="limits"></ul>
+        </section>
+        <!-- System health -->
+        <section class="card" aria-labelledby="health-heading">
+          <h2 id="health-heading">System health</h2>
+          <ul class="health" id="health"></ul>
+        </section>
+      </div>
+
+      <!-- Controls -->
+      <section class="card" aria-labelledby="controls-heading">
+        <div class="card-head">
+          <h2 id="controls-heading">Trading controls</h2>
+          <p class="muted small">Important changes ask you to confirm.</p>
+        </div>
+        <div class="controls" id="controls"></div>
+      </section>
+
+      <!-- Approval -->
+      <section class="card" aria-labelledby="approval-heading">
+        <h2 id="approval-heading">Waiting for your approval</h2>
+        <div id="approval"></div>
+      </section>
+
+      <!-- Scanner -->
+      <section class="card" aria-labelledby="scanner-heading">
+        <div class="card-head">
+          <h2 id="scanner-heading">Market scanner</h2>
+          <div class="filters" role="group" aria-label="Filter markets by category" id="scanner-filters">
+            <button type="button" class="filter" aria-pressed="true" data-cat="all">All</button>
+            <button type="button" class="filter" aria-pressed="false" data-cat="kalshi">Kalshi</button>
+            <button type="button" class="filter" aria-pressed="false" data-cat="esports">E-Sports</button>
+            <button type="button" class="filter" aria-pressed="false" data-cat="stocks">Stocks</button>
+            <button type="button" class="filter" aria-pressed="false" data-cat="etfs">ETFs</button>
+          </div>
+        </div>
+        <p class="muted small">"No trade" is a normal, healthy answer. ATLAS only trades when every check passes.</p>
+        <div class="table-scroll" role="region" aria-label="Market scanner table" tabindex="0">
+          <table>
+            <caption class="visually-hidden">Markets being scanned with ATLAS's verdict and reason</caption>
+            <thead><tr>
+              <th scope="col">Market</th><th scope="col">Side</th><th scope="col" class="num">Price</th>
+              <th scope="col" class="num">Model</th><th scope="col" class="num">Spread</th>
+              <th scope="col" class="num">Depth</th><th scope="col">Verdict</th><th scope="col">Why</th>
+            </tr></thead>
+            <tbody id="scanner"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="two-col">
+        <!-- Correlation -->
+        <section class="card" aria-labelledby="corr-heading">
+          <h2 id="corr-heading">Correlation and concentration</h2>
+          <h3>Exposure by sector</h3>
+          <ul class="bars" id="sectors"></ul>
+          <h3>Correlated risk groups</h3>
+          <ul class="groups" id="groups"></ul>
+          <h3>Overlapping holdings</h3>
+          <ul class="plain" id="overlaps"></ul>
+          <p class="muted small" id="corr-window"></p>
+        </section>
+
+        <!-- Shadow trading -->
+        <section class="card shadow-card" aria-labelledby="shadow-heading">
+          <div class="card-head">
+            <h2 id="shadow-heading">Shadow trading</h2>
+            <p class="chip chip-sim">Simulated · not real money</p>
+          </div>
+          <p class="big" id="shadow-balance">–</p>
+          <p class="muted small" id="shadow-sub"></p>
+          <figure class="spark">
+            <svg id="spark" viewBox="0 0 300 80" preserveAspectRatio="none" role="img" aria-labelledby="spark-cap"></svg>
+            <figcaption id="spark-cap" class="muted small"></figcaption>
+          </figure>
+          <dl class="mini-kpis" id="shadow-kpis"></dl>
+          <h3>Simulated positions</h3>
+          <ul class="plain" id="shadow-pos"></ul>
+          <p class="muted small" id="shadow-vs"></p>
+        </section>
+      </div>
+
+      <!-- Positions -->
+      <section class="card" aria-labelledby="pos-heading">
+        <div class="card-head">
+          <h2 id="pos-heading">Open positions (real)</h2>
+          <button type="button" class="btn btn-ghost" id="liquidate-btn" disabled aria-describedby="liq-help">Liquidate positions…</button>
+        </div>
+        <p id="liq-help" class="muted small">Liquidation is a separate action from the emergency stop and always asks for confirmation. Not available in preview.</p>
+        <div id="positions"></div>
+      </section>
+
+      <!-- Activity -->
+      <section class="card" aria-labelledby="activity-heading">
+        <div class="card-head">
+          <h2 id="activity-heading">Activity history</h2>
+          <div class="filters" role="group" aria-label="Filter activity" id="activity-filters">
+            <button type="button" class="filter" aria-pressed="true" data-kind="all">All</button>
+            <button type="button" class="filter" aria-pressed="false" data-kind="reject">Rejections</button>
+            <button type="button" class="filter" aria-pressed="false" data-kind="shadow">Simulated</button>
+            <button type="button" class="filter" aria-pressed="false" data-kind="control">Your changes</button>
+          </div>
+        </div>
+        <div class="table-scroll" role="region" aria-label="Activity history table" tabindex="0">
+          <table>
+            <caption class="visually-hidden">Every decision ATLAS made, newest first</caption>
+            <thead><tr><th scope="col">Time</th><th scope="col">Event</th><th scope="col">Details</th></tr></thead>
+            <tbody id="activity"></tbody>
+          </table>
+        </div>
+        <p class="more-row"><button type="button" class="btn btn-ghost" id="activity-more" aria-expanded="false" aria-controls="activity">Show all</button></p>
+      </section>
+
+      <!-- Daily summary -->
+      <section class="card" aria-labelledby="summary-heading">
+        <h2 id="summary-heading">Daily summary</h2>
+        <dl class="kpis" id="summary"></dl>
+        <p class="muted small">Profit is only counted once realized. Unrealized gains are never reported as a profitable day.</p>
+      </section>
+
+      <footer class="foot muted small">
+        ATLAS preview · capital preservation first, intelligent trading second, profitability third.
+      </footer>
+    </main>
+  </div>
+
+  <!-- Confirmation dialog -->
+  <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+    <form method="dialog" id="confirm-form">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-body"></p>
+      <div id="confirm-typed" hidden>
+        <label for="confirm-input">Type <strong id="confirm-word"></strong> to confirm</label>
+        <input id="confirm-input" autocomplete="off" spellcheck="false" aria-describedby="confirm-error">
+        <p id="confirm-error" class="field-error" hidden></p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="confirm-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
