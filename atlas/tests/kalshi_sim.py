@@ -129,6 +129,10 @@ class KalshiSim:
         coid = b["client_order_id"]
         if coid in ex.orders:
             return 409, {"error": {"code": "order_already_exists"}}
+        whole, _, frac = str(b["price"]).partition(".")
+        if len(frac) > 4:                                  # real Kalshi: request prices take 2-4 decimals
+            return 400, {"error": {"code": "invalid_order",
+                                   "details": f"invalid price: invalid dollar precision: -{len(frac)}"}}
         _, side, action, _ = coid.split("-", 3)           # the sim reads ATLAS's intent like the real
         price = _u(b["price"])                             # exchange's netting would economically
         own_price = price if side == "yes" else U - price

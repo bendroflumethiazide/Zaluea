@@ -110,3 +110,9 @@ def test_unknown_fee_type_is_refused(st):
     r = st.buy(st.proposal(market="KXBTC15M-B", qty=1))
     assert r.status == "rejected" and "cannot be computed exactly" in r.reasons[0]
     assert posts(st) == []
+
+
+def test_simulator_rejects_six_decimal_prices_like_the_real_exchange(st):
+    status, payload = st.sim._create({"client_order_id": "atlas-yes-buy-x", "ticker": "KXBTC15M-A",
+                                      "price": "0.010000", "count": "1", "time_in_force": "immediate_or_cancel"})
+    assert status == 400 and "precision" in payload["error"]["details"]
