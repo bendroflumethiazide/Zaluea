@@ -37,6 +37,7 @@ class Limits:
     cat_etfs: Money = Money.dollars(10)
     max_event_exposure: Money = Money.dollars(3)      # one underlying event / risk group
     max_strategy_exposure: Money = Money.dollars(6)
+    max_correlated_exposure: Money = Money.dollars(4)  # one correlated risk group (e.g. all crypto)
     # Counts
     max_positions: int = 3
     max_open_orders: int = 3
@@ -58,6 +59,7 @@ ABSOLUTE_CEILINGS = Limits(
     max_total_exposure=Money.dollars(100), max_daily_loss=Money.dollars(50), max_drawdown=Money.dollars(75),
     cat_kalshi=Money.dollars(100), cat_stocks=Money.dollars(100), cat_etfs=Money.dollars(100),
     max_event_exposure=Money.dollars(25), max_strategy_exposure=Money.dollars(50),
+    max_correlated_exposure=Money.dollars(50),
     max_positions=10, max_open_orders=10, max_consec_losses=10,
     max_data_age_ms=30_000, max_slippage_bps=500, kalshi_max_spread=Money.cents(10), stock_max_spread_bps=100,
 )
@@ -111,6 +113,24 @@ class LimitStore:
                                                             "0000-00-00", time.time(), "default"))
             audit.append("config_change", decision="initialized", reason="Default limits installed",
                          data={n: _encode(getattr(DEFAULTS, n)) for n in FIELD_NAMES})
+        elif not readonly:
+            self._add_new_limit_defaults()
+
+    def _add_new_limit_defaults(self) -> None:
+        """Limits added in a later ATLAS version get their default (audited).
+        Without this, current() would fail closed on an older data folder."""
+        missing = [n for n in FIELD_NAMES
+                   if not self.con.execute("SELECT 1 FROM limit_changes WHERE field=?", (n,)).fetchone()]
+        if not missing:
+            return
+        with immediate(self.con):
+            for name in missing:
+                self.con.execute("INSERT INTO limit_changes (field,value,effective_day,created_ts,reason) "
+                                 "VALUES (?,?,?,?,?)", (name, _encode(getattr(DEFAULTS, name)), "0000-00-00",
+                                                        time.time(), "default for a newly added limit"))
+        if self.audit:
+            self.audit.append("config_change", decision="limits_added", reason="New limits added at their defaults",
+                              data={n: _encode(getattr(DEFAULTS, n)) for n in missing})
 
     def current(self, day: str) -> Limits:
         """Limits in force on accounting day `day`. Raises StorageError if any

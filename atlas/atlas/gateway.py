@@ -34,6 +34,7 @@ from .exchange.errors import AuthError, DataError, DuplicateOrder, ExchangeError
 from .health import HealthBoard
 from .ledger import BudgetError, Ledger, LedgerIntegrityError, ReservationRequest
 from .marketdata.esports import identify
+from .analytics.correlation import CorrelationModel, Holding
 from .limits import LimitStore
 from .money import Money, kalshi_taker_fee
 from .paths import DataPaths
@@ -75,6 +76,7 @@ class Gateway:
         self.seen_proposals: set[str] = set()
         self.unknown_since: dict[str, float] = {}
         self.last_write_ts = 0.0          # when ATLAS last placed or cancelled an order
+        self.correlation = CorrelationModel()   # price histories / ETF holdings added as data arrives
         self.waiting_for_exchange_data = False
 
     # ---------------------------------------------------------------- startup
@@ -275,9 +277,13 @@ class Gateway:
         if not decision.approved:
             return self._reject(prop, "4-5 risk", decision.reasons, fp)
 
-        # 6 correlation (conservative until the Phase 4 engine): event group must be named
+        # 6 correlation: the proposal's whole risk group must stay within its limit
         if not prop.event_group:
             return self._reject(prop, "6 correlation", ["No event group: correlation unknown"], fp, coid)
+        ok_c, group, why_c = self.correlation.check(
+            Holding(prop.module, prop.market, prop.event_group, cost), self._holdings(snap), limits.max_correlated_exposure)
+        if not ok_c:
+            return self._reject(prop, "6 correlation", [why_c], fp, coid)
 
         # 9 price: re-read the market right before submitting
         try:
@@ -308,6 +314,14 @@ class Gateway:
         self.audit.append("order_submission", asset=prop.market, strategy=prop.strategy, decision="submitting",
                           data={"client_order_id": coid, "fingerprint": fp, "max_cost": cost})
         return self._place(prop, coid, fp)
+
+    def _holdings(self, snap) -> list[Holding]:
+        """Current exposure per market (positions + unfilled reservations) for correlation checks."""
+        info = {(p.market): (p.module, p.event_group) for p in snap.positions}
+        for o in self.ledger.open_orders():
+            info.setdefault(o["market"], (o["module"], o["event_group"]))
+        return [Holding(info[m][0], m, info[m][1], exp) for m, exp in snap.exposure_by_market.items()
+                if exp.units > 0 and m in info]
 
     def _disagreement(self, prop, decision, sd, sig_ok, fp, coid) -> GatewayResult:
         try:
