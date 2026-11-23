@@ -296,7 +296,8 @@ function renderShadow() {
     const strat = a.name.split("/")[0].replace("crypto_", "").replace(/_/g, " ");
     const title = a.type === "maker" ? "Resting bids" : "Buy at the ask";
     const prof = a.name.endsWith("/as_live") ? "real limits" : "research, no daily stops";
-    const notes = [a.open ? `${a.open} order resting now` : "",
+    const notes = [a.reconciled === false ? "<strong class=\"neg\">Books do not match: results unreliable</strong>" : "",
+      a.open ? `${a.open} order resting now` : "",
       a.missed ? `unfilled orders would have won ${pct(a.missed_win_rate)} of ${a.missed}` : "",
       a.pnl_no_maker_fee ? `${esc(a.pnl_no_maker_fee)} if makers pay no fee` : "",
       a.rejected ? `${a.rejected} refused by limits` : ""].filter(Boolean).join(" · ");

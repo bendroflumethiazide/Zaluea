@@ -336,6 +336,7 @@ def test_runner_end_to_end_with_separate_balance(tmp_path):
     k.result = "yes"
     st = r.tick()
     for a in st["accounts"]:
+        assert a["reconciled"]
         fee = SimExchange().maker_fee(1, M("0.41"), 100)
         assert a["settled"] == 1 and a["pnl_total"] == str(Money.dollars(1) - M("0.41") - fee)
         assert a["missed_resolved"] == 1 and a["missed_hypothetical_pnl"] == str(

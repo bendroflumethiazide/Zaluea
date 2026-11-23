@@ -20,6 +20,7 @@ def _ledger_totals(path: Path) -> dict:
     try:
         fees = con.execute("SELECT COALESCE(SUM(fee),0) f FROM executions WHERE action='buy'").fetchone()["f"]
         rows = con.execute("SELECT market, side, action, qty, price, fee FROM executions ORDER BY seq").fetchall()
+        bought = con.execute("SELECT COALESCE(SUM(qty),0) q FROM executions WHERE action='buy'").fetchone()["q"]
     finally:
         con.close()
     basis, held, closed = {}, {}, []
@@ -35,7 +36,8 @@ def _ledger_totals(path: Path) -> dict:
             held[k] = q - r["qty"]
             closed.append(r["qty"] * r["price"] - r["fee"] - removed)
     open_pos = [{"market": k[0], "side": k[1], "qty": held[k], "basis": basis[k]} for k in held if held[k] > 0]
-    return {"fees": fees, "closed": closed, "open_cost": sum(p["basis"] for p in open_pos), "positions": open_pos}
+    return {"fees": fees, "closed": closed, "open_cost": sum(p["basis"] for p in open_pos), "positions": open_pos,
+            "bought": bought}
 
 
 def account_summary(folder: Path, name: str, kind: str, journal) -> dict:
@@ -64,6 +66,7 @@ def account_summary(folder: Path, name: str, kind: str, journal) -> dict:
         "missed_hypothetical_pnl": str(Money(sum(r["hypo_pnl"] for r in missed_done))),
         "rejected": len(rejected), "rejected_reasons": reasons.most_common(3),
         "open_orders": 0,
+        "reconciled": contracts == t["bought"],         # journal and simulated ledger must agree exactly
         "positions": t["positions"],
         "curve_c": [sum(t["closed"][:i + 1]) // 10_000 for i in range(len(t["closed"]))],   # display only
     }
@@ -113,7 +116,7 @@ def report_markdown(data_dir: str | Path) -> str:
     lines += ["| Account | Orders | Filled | Fill rate | Settled | Win rate | P&L | Fees | "
               "Missed (resolved) | Missed win rate | Missed hypothetical P&L | Rejected |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    makers = []
+    makers, takers = [], []
     for ledger in sorted(root.glob("*/*/sim_ledger.db")):
         folder = ledger.parent
         name = f"{folder.parent.name}/{folder.name}"
@@ -124,11 +127,13 @@ def report_markdown(data_dir: str | Path) -> str:
                      f"{pct(a['win_rate_pct'])} | {a['pnl_total']} | {a['fees_paid']} | {a['missed']} "
                      f"({a['missed_resolved']}) | {pct(a['missed_win_rate_pct'])} | {a['missed_hypothetical_pnl']} | "
                      f"{a['rejected']} |")
-        if kind == "maker":
-            makers.append(a)
+        (makers if kind == "maker" else takers).append(a)
     for a in makers:
         lines.append(f"\n{a['account']}: P&L if resting orders pay no maker fee: {a['pnl_if_no_maker_fee']}")
     real = real_summary(Path(data_dir))
+    bad = [a for a in makers + takers if not a["reconciled"]]
+    lines.append("" if not bad else "\n**WARNING: the journal and the simulated ledger disagree for "
+                 + ", ".join(a["account"] for a in bad) + ". These results are not reliable.**")
     lines += ["", "## Real account (kept separate)", "", real["note"]]
     if real["available"]:
         lines.append(f"Real realized P&L: {real['pnl_total']} over {real['settled']} settled trades.")

@@ -175,7 +175,8 @@ class RealState:
                           "fill_rate": a["fill_rate_pct"], "settled": a["settled"], "win_rate": a["win_rate_pct"],
                           "pnl": a["pnl_total"], "pnl_no_maker_fee": a.get("pnl_if_no_maker_fee"),
                           "missed": a["missed_resolved"], "missed_win_rate": a["missed_win_rate_pct"],
-                          "rejected": a["rejected"], "open": a["open_orders"]} for a in accts],
+                          "rejected": a["rejected"], "open": a["open_orders"],
+                          "reconciled": a.get("reconciled", True)} for a in accts],
             "assumptions": sd.get("assumptions", {}),
             "vs_live": f"real account {real.get('pnl_total', '$0.00')} realized, kept separate. "
                        + real.get("note", ""),
