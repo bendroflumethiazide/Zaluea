@@ -512,8 +512,12 @@ def main() -> None:
     if a.report:
         write_report()
         return
-    if a.mode == "live" and not a.i_understand_real_money:
-        raise SystemExit("live mode trades real money: add --i-understand-real-money")
+    if a.mode == "live":
+        # Retired by the ATLAS audit (atlas/docs/01-audit.md): this bot can resubmit an
+        # order after a timeout, book a stop-loss that never filled, and keeps its budget
+        # only in a local file. Real-money trading moves to ATLAS's execution gateway.
+        raise SystemExit("Live mode is disabled pending the ATLAS rebuild. "
+                         "Use --mode paper (default) or --mode demo (fake money).")
     Bot(a.mode, a.stake, a.max_daily_loss, a.max_trades, a.max_daily_spend).run()
 
 
