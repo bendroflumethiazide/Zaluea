@@ -22,16 +22,7 @@ import time
 from dataclasses import dataclass, field
 
 
-class ExchangeError(Exception):
-    pass
-
-
-class DuplicateOrder(ExchangeError):
-    pass
-
-
-class OrderRejected(ExchangeError):
-    pass
+from .errors import DuplicateOrder, ExchangeError, OrderRejected  # noqa: F401  (shared error types)
 
 
 U = 1_000_000          # units per dollar ($0.000001), like the real API's 6 decimals
@@ -124,7 +115,8 @@ class FakeExchange:
     def market_info(self, market: str) -> dict:
         self._check_up()
         m = self.markets[market]
-        return {"market": market, "event": m["event"], "module": m["module"]}
+        return {"market": market, "event": m["event"], "module": m["module"], "fee_type": m.get("fee_type", "quadratic"),
+                "fee_multiplier": m.get("fee_multiplier", "1")}
 
     def balance(self) -> str:
         self._check_up()
@@ -148,7 +140,12 @@ class FakeExchange:
         self._check_up()
         return [s for s in self.settlements_log if s["ts"] >= since_ts]
 
-    def get_order(self, client_order_id: str) -> dict | None:
+    def data_as_of(self) -> float:
+        """How current the exchange's account data is (the fake is always current)."""
+        self._check_up()
+        return self.clock()
+
+    def get_order(self, client_order_id: str, market: str | None = None) -> dict | None:
         self._check_up()
         self._expire()
         o = self.orders.get(client_order_id)
@@ -226,7 +223,7 @@ class FakeExchange:
                                "market": o.market, "side": o.side, "action": o.action, "qty": q,
                                "price": _s(px), "fee": _s(fee), "ts": self.clock()})
 
-    def cancel(self, client_order_id: str) -> dict:
+    def cancel(self, client_order_id: str, market: str | None = None) -> dict:
         self._check_up()
         fault = self.faults.pop(0) if self.faults else None
         o = self.orders.get(client_order_id)

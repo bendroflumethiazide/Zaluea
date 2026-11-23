@@ -21,17 +21,35 @@ RECONCILE_MAX_AGE_S = 30.0
 KALSHI_MAX_PRICE = Money.parse("0.99")
 
 
-def worst_case_fee(module: str, qty: int, price: Money) -> Money:
-    """Highest fee this order could incur."""
+KNOWN_KALSHI_FEE_TYPES = {"quadratic", "quadratic_with_maker_fees", "quadratic_with_combo_maker_fees"}
+
+
+def fee_multiplier_pct(fee_type: str | None, multiplier: str | None) -> int | None:
+    """Exact fee multiplier in percent, or None if ATLAS cannot compute this
+    market's fee exactly (unknown fee type, or a multiplier that is not a
+    whole percent). None means: do not trade this market."""
+    if fee_type not in KNOWN_KALSHI_FEE_TYPES or multiplier in (None, "", "None"):
+        return None
+    try:
+        m = Money.parse(str(multiplier))           # exact decimal parse; floats never involved
+    except Exception:
+        return None
+    if m.units < 0 or m.units % 10_000:            # must be a whole percent
+        return None
+    return m.units // 10_000
+
+
+def worst_case_fee(module: str, qty: int, price: Money, multiplier_pct: int = 100) -> Money:
+    """Highest taker fee this order could incur."""
     if module in ("kalshi", "esports"):
-        return kalshi_taker_fee(qty, price)
+        return kalshi_taker_fee(qty, price, multiplier_pct)
     if module in ("stocks", "etfs"):
         return Money.ZERO            # Alpaca charges no commission on buys
     raise ValueError(f"Unknown module {module}")
 
 
 def max_cost(p: Proposal) -> Money:
-    return p.limit_price * p.qty + worst_case_fee(p.module, p.qty, p.limit_price)
+    return p.limit_price * p.qty + worst_case_fee(p.module, p.qty, p.limit_price, p.fee_multiplier_pct)
 
 
 @dataclass

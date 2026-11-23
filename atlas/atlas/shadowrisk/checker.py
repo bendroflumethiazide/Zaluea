@@ -50,10 +50,10 @@ def D(s) -> Decimal:
     return Decimal(str(s))
 
 
-def shadow_fee(module: str, qty: int, price: Decimal) -> Decimal:
-    """Independent fee formula: Kalshi 0.07 x C x P x (1-P), rounded UP to the cent."""
+def shadow_fee(module: str, qty: int, price: Decimal, multiplier: Decimal = ONE) -> Decimal:
+    """Independent fee formula: Kalshi 0.07 x C x P x (1-P) x multiplier, rounded UP to the cent."""
     if module in ("kalshi", "esports"):
-        raw = Decimal("0.07") * qty * price * (ONE - price)
+        raw = Decimal("0.07") * qty * price * (ONE - price) * multiplier
         return raw.quantize(CENT, rounding=ROUND_CEILING)
     if module in ("stocks", "etfs"):
         return Decimal("0")
@@ -193,7 +193,7 @@ class ShadowRiskManager:
         """Journal entries whose order is not CONFIRMED finished on the exchange."""
         out = []
         for j in self.journal.execute("SELECT * FROM journal WHERE closed_ts IS NULL"):
-            o = self.ex.get_order(j["client_order_id"])
+            o = self.ex.get_order(j["client_order_id"], market=j["market"])
             if o is not None and o["status"] in ("filled", "cancelled", "expired", "rejected"):
                 self.journal.execute("UPDATE journal SET closed_ts=?, close_reason=? WHERE client_order_id=?",
                                      (self.clock(), o["status"], j["client_order_id"]))
@@ -210,7 +210,8 @@ class ShadowRiskManager:
     def release(self, client_order_id: str) -> bool:
         """The gateway says it did not submit an order this manager approved.
         Not trusted blindly: closed only if the exchange confirms no such order."""
-        if self.ex.get_order(client_order_id) is not None:
+        row = self.journal.execute("SELECT market FROM journal WHERE client_order_id=?", (client_order_id,)).fetchone()
+        if self.ex.get_order(client_order_id, market=row["market"] if row else None) is not None:
             return False
         self.journal.execute("UPDATE journal SET closed_ts=?, close_reason='not_submitted' "
                              "WHERE client_order_id=? AND closed_ts IS NULL", (self.clock(), client_order_id))
@@ -256,7 +257,12 @@ class ShadowRiskManager:
 
         qty = int(order["qty"])
         limit = D(order["limit_price"])
-        own_cost = limit * qty + shadow_fee(order["module"], qty, limit)
+        multiplier = ONE
+        if order["module"] in ("kalshi", "esports"):
+            if info.get("fee_type") not in ("quadratic", "quadratic_with_maker_fees", "quadratic_with_combo_maker_fees"):
+                return self._sign(order, [("FEE_UNKNOWN", f"Fee type {info.get('fee_type')!r} not supported")])
+            multiplier = D(str(info.get("fee_multiplier")))
+        own_cost = limit * qty + shadow_fee(order["module"], qty, limit, multiplier)
         claimed = D(order["max_cost"])
         if own_cost != claimed:
             bad("COST_MISMATCH", f"Order cost recomputed as {own_cost}, gateway said {claimed}")

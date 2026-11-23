@@ -39,5 +39,6 @@ class Proposal:
     expected_value: Money          # net of fees, spread and slippage, for the whole order
     reason: str
     exit_plan: str
+    fee_multiplier_pct: int = 100  # the market's fee multiplier x 100 (Kalshi series setting)
     proposal_id: str = field(default_factory=lambda: f"prop-{uuid.uuid4()}")
     action: str = "buy"

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from .audit import AuditLog
 from .clock import ClockGuard, accounting_day
 from .control import ControlStore, LockStore, order_fingerprint, trading_locked
-from .exchange.fake import DuplicateOrder, ExchangeError, OrderRejected
+from .exchange.errors import AuthError, DataError, DuplicateOrder, ExchangeError, OrderRejected
 from .health import HealthBoard
 from .ledger import BudgetError, Ledger, LedgerIntegrityError, ReservationRequest
 from .limits import LimitStore
@@ -73,6 +73,8 @@ class Gateway:
         self.reconciled_at: float | None = None
         self.seen_proposals: set[str] = set()
         self.unknown_since: dict[str, float] = {}
+        self.last_write_ts = 0.0          # when ATLAS last placed or cancelled an order
+        self.waiting_for_exchange_data = False
 
     # ---------------------------------------------------------------- startup
     def start(self) -> None:
@@ -202,6 +204,22 @@ class Gateway:
         if locked:
             return self._reject(prop, "12 final", [f"Trading locked: {why}"], fp)
 
+        # fees: the proposal's fee assumption must match the market's real fee schedule
+        if prop.module in ("kalshi", "esports"):
+            try:
+                info = self.ex.market_info(prop.market)
+            except Exception as e:
+                return self._reject(prop, "8 market data", [f"Could not read market details: {e}"], fp)
+            pct = primary.fee_multiplier_pct(info.get("fee_type"), info.get("fee_multiplier"))
+            if pct is None:
+                return self._reject(prop, "8 market data", [f"Fee type {info.get('fee_type')!r} x "
+                                    f"{info.get('fee_multiplier')} cannot be computed exactly; not trading it"], fp)
+            if pct != prop.fee_multiplier_pct:
+                return self._reject(prop, "8 market data", [f"Proposal assumed a {prop.fee_multiplier_pct}% fee "
+                                    f"multiplier; the market uses {pct}%"], fp)
+            if info.get("module") != prop.module:
+                return self._reject(prop, "8 market data", [f"Market is {info.get('module')}, not {prop.module}"], fp)
+
         # 3 budget state
         day = self.verified_day()
         if day is None:
@@ -223,7 +241,7 @@ class Gateway:
         decision = primary.evaluate(prop, ctx)
 
         # 5 shadow risk (always asked, so disagreements are always visible)
-        coid = f"atlas-{uuid.uuid4()}"
+        coid = f"atlas-{prop.side}-buy-{uuid.uuid4()}"   # intent is recoverable from the exchange
         order = {"module": prop.module, "market": prop.market, "side": prop.side, "qty": prop.qty,
                  "limit_price": prop.limit_price.to_str(), "max_cost": cost.to_str(), "strategy": prop.strategy,
                  "client_order_id": coid, "fingerprint": fp}
@@ -312,6 +330,7 @@ class Gateway:
     # --------------------------------------------------------------- execution
     def _place(self, prop: Proposal, coid: str, fp: str) -> GatewayResult:
         self.ledger.set_status(coid, "submitted")
+        self.last_write_ts = self.clock()
         try:
             self.ex.place_order(coid, prop.market, prop.side, "buy", prop.qty, prop.limit_price.to_str(),
                                 tif="ioc", expiration_ts=self.clock() + ORDER_EXPIRY_S)
@@ -335,8 +354,8 @@ class Gateway:
 
     def sync_order(self, coid: str) -> str:
         """Bring one order up to date from the exchange. Never resubmits."""
-        o = self.ex.get_order(coid)
         led = self.ledger.order(coid)
+        o = self.ex.get_order(coid, market=led["market"])
         if o is None:
             since = self.unknown_since.setdefault(coid, self.clock())
             if led["status"] in ("unknown", "submitted") and self.clock() - since > UNKNOWN_GIVE_UP_S:
@@ -361,7 +380,7 @@ class Gateway:
             if o["action"] != "buy":
                 continue
             try:
-                r = self.ex.cancel(o["client_order_id"])
+                r = self.ex.cancel(o["client_order_id"], market=o["market"])
                 if r["status"] == "cancel_requested":
                     self.ledger.set_status(o["client_order_id"], "cancel_requested", note=reason)
                 self.sync_order(o["client_order_id"])
@@ -373,6 +392,19 @@ class Gateway:
     def reconcile(self) -> bool:
         """Compare the ledger with the exchange. Any unexplained difference
         locks trading. Returns True only if everything matches."""
+        # The exchange's account data lags its writes slightly. Until it includes our
+        # latest order, a comparison would show false mismatches: report "not yet", no lock.
+        try:
+            as_of = self.ex.data_as_of() if hasattr(self.ex, "data_as_of") else self.clock()
+        except Exception as e:
+            self.reconciled_ok = False
+            self.audit.append("reconciliation", decision="deferred", reason=f"Exchange data time unavailable: {e}")
+            return False
+        if as_of < self.last_write_ts:
+            self.reconciled_ok = False
+            self.waiting_for_exchange_data = True
+            return False
+        self.waiting_for_exchange_data = False
         try:
             day = self.verified_day() or accounting_day(self.clock())
             for o in self.ledger.open_orders():

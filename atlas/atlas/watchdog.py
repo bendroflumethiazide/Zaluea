@@ -84,11 +84,11 @@ class CancelOnlyExchange:
     def server_time(self):
         return self._ex.server_time()
 
-    def get_order(self, coid):
-        return self._ex.get_order(coid)
+    def get_order(self, coid, market=None):
+        return self._ex.get_order(coid, market=market)
 
-    def cancel(self, coid):
-        return self._ex.cancel(coid)
+    def cancel(self, coid, market=None):
+        return self._ex.cancel(coid, market=market)
 
 
 @dataclass
@@ -245,7 +245,7 @@ class Watchdog:
         if self.ex is not None:
             for o in getattr(self, "_open_entries", []):
                 try:
-                    self.ex.cancel(o["client_order_id"])
+                    self.ex.cancel(o["client_order_id"], market=o["market"])
                     cancelled += 1
                 except Exception:
                     pass

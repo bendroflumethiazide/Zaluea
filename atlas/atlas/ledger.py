@@ -333,7 +333,7 @@ class Ledger:
                      strategy: str, event_group: str) -> str:
         """Exits reduce risk, so they never consume the purchase budget, but they
         are still tracked so duplicates and unknown outcomes are handled."""
-        coid = f"atlas-{uuid.uuid4()}"
+        coid = f"atlas-{side}-sell-{uuid.uuid4()}"
         now = self.clock()
         with immediate(self.con):
             s = self.snapshot(day)
