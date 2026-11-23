@@ -57,7 +57,7 @@ def test_buy_fills_and_reconciles_through_the_real_client(st):
     assert s.spent == M("1.78") and s.positions[0].qty == 2
     assert st.gw.reconcile() and st.gw.locks.active() == []
     body = posts(st)[0][2]
-    assert body["side"] == "bid" and body["price"] == "0.880000" and body["time_in_force"] == "immediate_or_cancel"
+    assert body["side"] == "bid" and body["price"] == "0.8800" and body["time_in_force"] == "immediate_or_cancel"
     assert body["client_order_id"].startswith("atlas-yes-buy-")
 
 

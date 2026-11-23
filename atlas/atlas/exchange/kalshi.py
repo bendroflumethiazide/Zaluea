@@ -82,13 +82,22 @@ def _iso_ts(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
+def _s4_request(u: int) -> str:
+    """Order REQUEST prices accept 2-4 decimals (responses use up to 6).
+    Found by the live demo test: "invalid dollar precision: -6". A price that
+    needs more than 4 decimals is refused here, never rounded."""
+    if u % 100:
+        raise OrderRejected(f"Price {_s6(u)} needs more than 4 decimals", "atlas_price_precision")
+    return f"{u // 1_000_000}.{(u % 1_000_000) // 100:04d}"
+
+
 def to_v2(side: str, action: str, price: str) -> tuple[str, str]:
-    """ATLAS (side, action, price of that side) -> V2 (book side, YES-leg price)."""
+    """ATLAS (side, action, price of that side) -> V2 (book side, YES-leg price, 4 decimals)."""
     p = _units6(price)
     if side == "yes":
-        return ("bid" if action == "buy" else "ask"), _s6(p)
+        return ("bid" if action == "buy" else "ask"), _s4_request(p)
     if side == "no":
-        return ("ask" if action == "buy" else "bid"), _s6(1_000_000 - p)
+        return ("ask" if action == "buy" else "bid"), _s4_request(1_000_000 - p)
     raise ValueError(side)
 
 

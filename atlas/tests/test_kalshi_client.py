@@ -85,10 +85,19 @@ def test_signed_path_includes_api_root():
 
 # ------------------------------------------------------------------ order direction
 def test_v2_direction_translation():
-    assert to_v2("yes", "buy", "0.88") == ("bid", "0.880000")
-    assert to_v2("no", "buy", "0.13") == ("ask", "0.870000")     # buy NO at 13c = sell YES at 87c
-    assert to_v2("yes", "sell", "0.50") == ("ask", "0.500000")
-    assert to_v2("no", "sell", "0.40") == ("bid", "0.600000")
+    assert to_v2("yes", "buy", "0.88") == ("bid", "0.8800")
+    assert to_v2("no", "buy", "0.13") == ("ask", "0.8700")       # buy NO at 13c = sell YES at 87c
+    assert to_v2("yes", "sell", "0.50") == ("ask", "0.5000")
+    assert to_v2("no", "sell", "0.40") == ("bid", "0.6000")
+    assert to_v2("yes", "buy", "0.01") == ("bid", "0.0100")       # the live demo test's price
+    assert to_v2("yes", "buy", "0.095") == ("bid", "0.0950")      # deci-cent tick below 10c
+
+
+def test_request_prices_never_exceed_four_decimals():
+    with pytest.raises(OrderRejected):
+        to_v2("yes", "buy", "0.123456")
+    with pytest.raises(OrderRejected):
+        to_v2("no", "buy", "0.00005")
 
 
 def test_place_order_body_matches_v2_spec():
@@ -99,7 +108,7 @@ def test_place_order_body_matches_v2_spec():
     call = rec.calls[0]
     assert call["method"] == "POST" and call["url"].endswith("/trade-api/v2/portfolio/events/orders")
     b = call["body"]
-    assert b == {"ticker": "KXBTC15M-X", "client_order_id": coid, "side": "ask", "count": "2", "price": "0.870000",
+    assert b == {"ticker": "KXBTC15M-X", "client_order_id": coid, "side": "ask", "count": "2", "price": "0.8700",
                  "self_trade_prevention_type": "taker_at_cross", "time_in_force": "immediate_or_cancel",
                  "cancel_order_on_pause": True, "subaccount": 7}
     assert "expiration_time" not in b                            # not allowed with IOC
