@@ -63,6 +63,7 @@ class SimOrder:
     queue_ahead: int = 0
     fills: list = field(default_factory=list)   # (fill_id, qty, price, fee, ts)
     cancel_at: float | None = None
+    end_reason: str = ""
 
 
 class SimExchange:
@@ -113,9 +114,9 @@ class SimExchange:
                     if o.status != "open":
                         break
             if o.status == "open" and o.cancel_at is not None and now >= o.cancel_at:
-                o.status = "cancelled"
+                o.status, o.end_reason = "cancelled", "withdrawn by the strategy"
             if o.status == "open" and now >= o.expires_at:
-                o.status = "expired"
+                o.status, o.end_reason = "expired", "reached its time limit"
         for ts in trades_by_market.values():
             self.seen_trades.update(t.trade_id for t in ts)
         return new_fills
@@ -132,10 +133,14 @@ class SimExchange:
                 self._fill(o, q, b.ask, fee, o.active_at, out)
                 b.ask_size -= q                          # we consumed that liquidity
             o.status = "filled" if o.filled == o.qty else "cancelled"   # IOC: the rest is cancelled
+            if o.status == "cancelled":
+                o.end_reason = ("not enough shown at the ask" if o.filled else
+                                "the ask moved above the limit or nothing was offered")
             return
         # maker: never cross the book (post-only); join the queue behind displayed size at our price
         if b and b.ask is not None and o.limit >= b.ask:
             o.status = "cancelled"                       # would have crossed: rejected as post-only
+            o.end_reason = "post-only: the ask fell to our price before the order went live"
             return
         o.queue_ahead = b.bid_size if (b and b.bid is not None and b.bid == o.limit) else 0
         o.status = "open"

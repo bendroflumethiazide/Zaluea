@@ -128,7 +128,9 @@ class CryptoFlipFavorite(Strategy):
 
         # ---- flip guards
         before = self.side_quote(v, side, v.now - c.momentum_window_s)
-        if before and before[0] is not None and before[1] is not None:
+        if not before or before[0] is None or before[1] is None:      # fail closed: the guard needs history
+            why.append(f"No price from {c.momentum_window_s} s ago to check for a flip")
+        else:
             drop = (before[0] + before[1]) - (bid + ask)         # 2 x mid change
             if drop > self.momentum_drop * 2:
                 why.append(f"Favorite's price fell {Money(drop.units // 2)} in {c.momentum_window_s} s: flip under way")

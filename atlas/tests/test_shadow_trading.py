@@ -425,3 +425,22 @@ def test_resting_bid_is_cancelled_when_value_is_gone_or_time_is_up():
     gone = s.keep(maker_view(ref_price="60005"), "yes", M("0.71"))    # BTC drifted to the strike
     assert gone and ("below" in gone or "disagrees" in gone)
     assert "minute 14" in s.keep(maker_view(now_min=14.2), "yes", M("0.71"))
+
+
+def test_maker_refuses_without_two_minutes_of_price_history():
+    v = maker_view(now_min=6.0)
+    recent = {k: Series(q.window(v.now - 60, v.now)).cut(v.now) for k, q in v.quotes.items()}   # 1 minute only
+    r = CryptoMaker().evaluate(MarketView(**{**v.__dict__, "quotes": recent}))
+    assert isinstance(r, NoTrade) and any("check for a flip" in x for x in r.reasons)
+
+
+def test_every_unfilled_order_records_why_it_ended():
+    sx = SimExchange(latency_s=1.0)
+    sx.update_book("MKT", "yes", book("0.40", "0.45", bid_size=0))
+    sx.submit("m1", "MKT", "yes", 2, M("0.44"), "maker", T0, T0 + 600)
+    sx.update_book("MKT", "yes", book("0.43", "0.44", ts=T0 + 0.5))   # ask fell to our price during the delay
+    sx.step(T0 + 1)
+    assert "post-only" in sx.orders["m1"].end_reason
+    sx.submit("t1", "MKT", "yes", 2, M("0.40"), "taker", T0 + 2, T0 + 4)
+    sx.step(T0 + 3)
+    assert "ask moved" in sx.orders["t1"].end_reason

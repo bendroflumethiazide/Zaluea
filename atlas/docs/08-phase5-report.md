@@ -1,6 +1,6 @@
 # Phase 5 report: shadow trading
 
-**Status:** built and tested (27 new tests; the full suite of 230 passes). It now needs to run for weeks to
+**Status:** built and tested (29 new tests; the full suite of 232 passes). It now needs to run for weeks to
 collect live evidence. No real order was placed, and none can be: shadow trading has no key, no gateway and no
 order code.
 
@@ -80,6 +80,8 @@ live data.
 - **Joining the best bid therefore almost never fills.** The strategy improves the bid by one cent whenever the spread is at least $0.02. That puts the order at the front of a new price level instead of behind thousands of contracts.
 - **The maker's guards fire often, as intended.** For example, the model's value fell below $0.03 per contract after fees, or BTC moved more than one standard deviation against a side within 60 s.
 - **A flaw found by the first live run, and fixed.** The first version withdrew a bid whenever the market's best bid slipped by one cent. On live data, its two bids lived 2–6 seconds each and never filled, and both would have won (+$0.44 hypothetical). A rule like that can never gather evidence. Since the fix, a resting bid stays while the model still values it above **its own price** after fees and no flip guard fires. It is cancelled when the value is gone, when a guard fires, or at minute 14. Two tests cover this.
+- **A second flaw found live, and fixed, in both strategies.** Right after a restart, the strategy bid $0.50 for YES eleven seconds after the price had dropped from $0.60, and was filled at once. That is the "falling knife" pattern the flip guard exists to block. But the guard compares against the price two minutes earlier, and with no history yet it was silently **skipped**. It now **fails closed**: no new order until two minutes of the market's own prices are available. The original buy-the-favorite strategy had the same gap and is fixed too.
+- **Every unfilled order now records why it ended.** Possible reasons: withdrawn by the strategy, post-only rejection (the ask fell to our price during the 1-second delay), too little shown at the ask, or the time limit.
 
 These are observations, not results. Results need weeks.
 

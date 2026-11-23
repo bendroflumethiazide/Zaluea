@@ -142,9 +142,10 @@ class CryptoMaker(Strategy):
             return (f"model {prob_bp / 100:.1f}% disagrees with the market {mid_bp / 100:.1f}% "
                     f"by more than {c.max_disagreement_bp / 100:.0f} points")
         before = v.quotes[side].at(v.now - c.momentum_window_s)
-        if before and before[1][0] is not None and before[1][1] is not None:
-            if (before[1][0] + before[1][1]) - (bid + ask) > self.momentum_drop * 2:
-                return f"price fell more than {self.momentum_drop} in {c.momentum_window_s} s"
+        if not before or before[1][0] is None or before[1][1] is None:     # fail closed: no history, no guard
+            return f"no price from {c.momentum_window_s} s ago to check for a flip"
+        if (before[1][0] + before[1][1]) - (bid + ask) > self.momentum_drop * 2:
+            return f"price fell more than {self.momentum_drop} in {c.momentum_window_s} s"
         if jump_move is not None:
             toward = -jump_move if side == "yes" else jump_move      # BTC moving against this side
             if toward > jump_limit:

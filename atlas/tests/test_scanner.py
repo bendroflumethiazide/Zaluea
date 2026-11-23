@@ -53,6 +53,10 @@ def test_scan_writes_rows_logs_one_prediction_and_scores_it(tmp_path):
     k = FakeKalshi()
     s = Scanner(tmp_path, kalshi=k, reference=BtcReference((src("a"), src("b")), clock=lambda: clock[0]),
                 history=history, clock=lambda: clock[0])
+    clock[0] = OPEN + 10 * 60                      # the flip guard needs 2 minutes of the market's own prices
+    first = {r["category"]: r for r in s.scan_once()["rows"]}
+    assert first["kalshi"]["verdict"] == "no_trade" and "check for a flip" in first["kalshi"]["reason"]
+    clock[0] = OPEN + 12 * 60
     out = s.scan_once()
     rows = {r["category"]: r for r in out["rows"]}
     assert rows["kalshi"]["verdict"] == "shadow" and "cannot trade" in rows["kalshi"]["reason"]

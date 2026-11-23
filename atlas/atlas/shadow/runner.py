@@ -175,7 +175,7 @@ class ShadowRunner:
                 kalshi_worst_case_fee(ev["qty"], o.limit, o.fee_multiplier_pct)
             self.journal.add(ts=ev["ts"], day=day, account=acct.name, strategy=s.name, market=o.market,
                              side=o.side, kind="missed", qty=ev["qty"], price=o.limit, fee=fee, coid=ev["coid"],
-                             detail=f"{ev['qty']} of {o.qty} not filled ({ev['kind']})")
+                             detail=f"{ev['qty']} of {o.qty} not filled: {o.end_reason or ev['kind']}")
 
     def _view(self, m: str, now: float) -> MarketView | None:
         info = self.info[m]
