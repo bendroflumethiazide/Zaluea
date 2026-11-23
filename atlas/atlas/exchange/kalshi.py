@@ -303,6 +303,46 @@ class KalshiExchange:
                 "ask": _s6(ask) if ask is not None else None, "ask_size": ask_size, "ts": received,
                 "source": "kalshi:orderbook"}
 
+    def book(self, market: str) -> dict:
+        """Both sides' best bid/ask WITH sizes, from one public request (used by shadow trading).
+        Prices are exact 6-decimal strings; sizes are whole contracts."""
+        payload, _ = self._request("GET", f"/markets/{urllib.parse.quote(market)}/orderbook",
+                                   {"depth": 10}, auth=False)
+        received = self.clock()
+        book = payload["orderbook_fp"]
+        best = {}
+        for leg in ("yes", "no"):
+            lv = [(_units6(p), _whole_or_floor(c)) for p, c in (book.get(f"{leg}_dollars") or [])]
+            top = max((p for p, _ in lv), default=None)
+            best[leg] = (top, sum(c for p, c in lv if p == top) if top is not None else 0)
+        out = {"market": market, "ts": received, "source": "kalshi:orderbook"}
+        for side, other in (("yes", "no"), ("no", "yes")):
+            (bid, bid_size), (ob, ob_size) = best[side], best[other]
+            out[side] = {"bid": _s6(bid) if bid is not None else None, "bid_size": bid_size,
+                         "ask": _s6(1_000_000 - ob) if ob is not None else None, "ask_size": ob_size}
+        return out
+
+    def recent_trades(self, market: str, min_ts: float, max_pages: int = 20) -> tuple[list[dict], bool]:
+        """Public trades in one market at or after `min_ts` (unix seconds), oldest first, and whether
+        the list is COMPLETE (False if more than `max_pages` pages of 1000 existed). Block trades are
+        excluded: they never touch the public order book. Busy BTC markets print thousands per minute."""
+        out, cursor, complete = [], None, False
+        for _ in range(max_pages):
+            payload, _ = self._request("GET", "/markets/trades",
+                                       {"ticker": market, "min_ts": int(min_ts), "limit": 1000, "cursor": cursor},
+                                       auth=False)
+            for t in payload.get("trades", []):
+                if t.get("is_block_trade") or t.get("ticker") != market:
+                    continue
+                out.append({"trade_id": t["trade_id"], "yes_price": t["yes_price_dollars"],
+                            "count": _whole_or_floor(t["count_fp"]), "taker_side": t["taker_outcome_side"],
+                            "ts": _iso_ts(t["created_time"])})
+            cursor = payload.get("cursor")
+            if not cursor:
+                complete = True
+                break
+        return sorted(out, key=lambda t: t["ts"]), complete
+
     def balance(self) -> str:
         payload, _ = self._request("GET", "/portfolio/balance")
         return payload["balance_dollars"]
