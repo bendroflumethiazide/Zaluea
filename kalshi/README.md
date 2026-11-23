@@ -87,6 +87,7 @@ While it holds a position, the bot sells if the held side's price falls to
 
 **Safety.**
 - About $5 at risk per trade (`--stake`).
+- At most $20 put into new trades per day (`--max-daily-spend`), so 4 trades at $5 each.
 - $15 daily loss cap (`--max-daily-loss`).
 - At most 20 trades a day.
 - One position at a time.

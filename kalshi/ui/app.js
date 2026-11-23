@@ -119,6 +119,8 @@ function renderToday(st) {
   setText("stat-pnl", money(t.pnl ?? 0));
   pnl.className = (t.pnl ?? 0) > 0.004 ? "pos" : (t.pnl ?? 0) < -0.004 ? "neg" : "";
   setText("stat-trades", String(t.trades ?? 0));
+  const cap = st.settings ? st.settings.max_daily_spend : null;
+  setText("stat-spent", cap ? `${money(t.spent ?? 0).replace("+", "")} of ${money(cap).replace("+", "")}` : "–");
   setText("stat-wins", String(t.wins ?? 0));
   setText("stat-losses", String(t.losses ?? 0));
 }
@@ -202,7 +204,7 @@ function renderTrades(st) {
 function fillSettings(st) {
   if (!st.settings || formDirty) return;
   if (settingsFilled && document.activeElement && document.activeElement.form === $("settings-form")) return;
-  for (const k of ["stake", "max_daily_loss", "max_trades"]) {
+  for (const k of Object.keys(FIELD_RULES)) {
     const el = $(k);
     if (el.value === "" || !settingsFilled) el.value = st.settings[k];
   }
@@ -211,11 +213,13 @@ function fillSettings(st) {
 
 const FIELD_LABELS = {
   stake: "Amount per trade",
+  max_daily_spend: "Daily spending limit",
   max_daily_loss: "Daily loss limit",
   max_trades: "Trades per day",
 };
 const FIELD_RULES = {
   stake: { min: 1, max: 25, whole: false },
+  max_daily_spend: { min: 1, max: 500, whole: false },
   max_daily_loss: { min: 1, max: 100, whole: false },
   max_trades: { min: 1, max: 50, whole: true },
 };

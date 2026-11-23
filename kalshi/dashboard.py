@@ -51,7 +51,8 @@ def read_state() -> dict:
 def clean_settings(body: dict) -> tuple[dict, dict]:
     """Return (valid settings, errors by field)."""
     out, errors = {}, {}
-    names = {"stake": "Amount per trade", "max_daily_loss": "Daily loss limit",
+    names = {"stake": "Amount per trade", "max_daily_spend": "Daily spending limit",
+             "max_daily_loss": "Daily loss limit",
              "max_trades": "Trades per day"}
     for key, (lo, hi) in LIMITS.items():
         if key not in body:

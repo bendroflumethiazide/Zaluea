@@ -44,6 +44,7 @@
       <h2 id="today-heading">Today</h2>
       <dl class="stats">
         <div class="stat"><dt>Net result</dt><dd id="stat-pnl">–</dd></div>
+        <div class="stat"><dt>Spent today</dt><dd id="stat-spent">–</dd></div>
         <div class="stat"><dt>Trades</dt><dd id="stat-trades">–</dd></div>
         <div class="stat"><dt>Won</dt><dd id="stat-wins">–</dd></div>
         <div class="stat"><dt>Lost or stopped</dt><dd id="stat-losses">–</dd></div>
@@ -110,6 +111,14 @@
           <input id="stake" name="stake" type="number" inputmode="decimal" min="1" max="25" step="0.5"
                  aria-describedby="stake-hint stake-error" required>
           <p id="stake-error" class="field-error" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="max_daily_spend">Daily spending limit (dollars)</label>
+          <p id="max_daily_spend-hint" class="hint">The most put into new trades per day. With $5 trades, $20 means 4 trades.</p>
+          <input id="max_daily_spend" name="max_daily_spend" type="number" inputmode="decimal" min="1" max="500" step="1"
+                 aria-describedby="max_daily_spend-hint max_daily_spend-error" required>
+          <p id="max_daily_spend-error" class="field-error" hidden></p>
         </div>
 
         <div class="field">

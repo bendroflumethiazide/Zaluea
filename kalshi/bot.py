@@ -11,7 +11,8 @@ Strategy (from the backtest in reports/btc15m.md, section 5):
          (a flip already under way).
       4. BTC has not jumped toward the strike in the last ~30 seconds.
   * Stop-loss: if the side we hold can only be sold at <= 0.50, sell.
-  * Each trade risks about $STAKE (default $5).
+  * Each trade risks about $STAKE (default $5), and at most
+    $MAX_DAILY_SPEND (default $20) goes into new trades per UTC day.
 
 Modes:
   paper  (default) live prices, simulated fills, no API key needed
@@ -45,7 +46,8 @@ DATA = HERE / "data"
 LOG = DATA / "bot_trades.jsonl"
 STATE = DATA / "bot_state.json"        # what the bot is doing now (read by dashboard.py)
 SETTINGS = DATA / "bot_settings.json"  # stake and limits (written by dashboard.py)
-LIMITS = {"stake": (1.0, 25.0), "max_daily_loss": (1.0, 100.0), "max_trades": (1, 50)}
+LIMITS = {"stake": (1.0, 25.0), "max_daily_spend": (1.0, 500.0),
+          "max_daily_loss": (1.0, 100.0), "max_trades": (1, 50)}
 STOP_FILE = HERE / "STOP"
 SERIES = "KXBTC15M"
 CB = "https://api.exchange.coinbase.com/products/BTC-USD"
@@ -180,7 +182,8 @@ class Btc:
 # Bot
 # ---------------------------------------------------------------------------
 class Bot:
-    def __init__(self, mode: str, stake: float, max_daily_loss: float, max_trades: int):
+    def __init__(self, mode: str, stake: float, max_daily_loss: float, max_trades: int,
+                 max_daily_spend: float = 20.0):
         self.mode = mode
         base = DEMO if mode == "demo" else PROD
         if mode == "paper":
@@ -189,6 +192,7 @@ class Bot:
             self.k = Kalshi(base, os.environ["KALSHI_KEY_ID"], os.environ["KALSHI_KEY_FILE"])
         self.btc = Btc()
         self.stake, self.max_daily_loss, self.max_trades = stake, max_daily_loss, max_trades
+        self.max_daily_spend = max_daily_spend
         self.pos: dict | None = None
         self.mid_hist: dict[str, list[tuple[float, float]]] = {}
         self.pending: list[dict] = []   # positions waiting for settlement
@@ -240,10 +244,11 @@ class Bot:
         state = dict(
             updated=now(), started=self.started, mode=self.mode, paused=self.paused,
             stopped_by_user=STOP_FILE.exists(), error=self.last_error,
-            settings=dict(stake=self.stake, max_daily_loss=self.max_daily_loss,
-                          max_trades=self.max_trades),
+            settings=dict(stake=self.stake, max_daily_spend=self.max_daily_spend,
+                          max_daily_loss=self.max_daily_loss, max_trades=self.max_trades),
             limits={k: list(v) for k, v in LIMITS.items()},
             today=dict(trades=sum(r["kind"] == "entry" for r in rows),
+                       spent=spent_today(rows),
                        wins=sum(r["pnl"] > 0 for r in closed),
                        losses=sum(r["pnl"] <= 0 for r in closed),
                        pnl=sum(r["pnl"] for r in closed)),
@@ -279,6 +284,10 @@ class Bot:
             return False, f"Daily loss limit reached ({pnl:+.2f} dollars). Resumes tomorrow (UTC)."
         if entries >= self.max_trades:
             return False, "Trade limit for today reached. Resumes tomorrow (UTC)."
+        spent = spent_today(rows)
+        if spent + self.stake > self.max_daily_spend + 1e-9:
+            return False, (f"Daily spending limit reached (${spent:.2f} of "
+                           f"${self.max_daily_spend:.2f} used). Resumes tomorrow (UTC).")
         return True, ""
 
     # ---- the decision ----
@@ -414,7 +423,8 @@ class Bot:
         self.pending = still
 
     def run(self) -> None:
-        log(f"mode={self.mode} stake=${self.stake} max daily loss=${self.max_daily_loss} "
+        log(f"mode={self.mode} stake=${self.stake} max daily spend=${self.max_daily_spend} "
+            f"max daily loss=${self.max_daily_loss} "
             f"max trades/day={self.max_trades}")
         if self.mode != "paper":
             log(f"balance ${self.k.balance():,.2f}")
@@ -458,6 +468,12 @@ class Bot:
             time.sleep(5)
 
 
+def spent_today(rows: list[dict]) -> float:
+    """Dollars put into new trades today: contracts x (price + fee)."""
+    return sum(r["count"] * (r["cost"] + taker_fee(r["cost"]))
+               for r in rows if r["kind"] == "entry")
+
+
 def write_report() -> None:
     if not LOG.exists():
         return
@@ -486,6 +502,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=("paper", "demo", "live"), default="paper")
     ap.add_argument("--stake", type=float, default=5.0, help="dollars risked per trade")
+    ap.add_argument("--max-daily-spend", type=float, default=20.0,
+                    help="most dollars put into new trades per UTC day")
     ap.add_argument("--max-daily-loss", type=float, default=15.0)
     ap.add_argument("--max-trades", type=int, default=20, help="per UTC day")
     ap.add_argument("--i-understand-real-money", action="store_true")
@@ -496,7 +514,7 @@ def main() -> None:
         return
     if a.mode == "live" and not a.i_understand_real_money:
         raise SystemExit("live mode trades real money: add --i-understand-real-money")
-    Bot(a.mode, a.stake, a.max_daily_loss, a.max_trades).run()
+    Bot(a.mode, a.stake, a.max_daily_loss, a.max_trades, a.max_daily_spend).run()
 
 
 if __name__ == "__main__":
