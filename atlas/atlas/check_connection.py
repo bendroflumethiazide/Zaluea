@@ -34,6 +34,7 @@ from pathlib import Path
 from .exchange.alpaca import AlpacaClient
 from .exchange.kalshi import DEMO, PROD, KalshiExchange, load_signer
 from .marketdata.btc import BtcReference
+from .money import Money
 
 OK, BAD, INFO = "PASS", "FAIL", "INFO"
 CONFIG = Path.home() / ".atlas" / "config.json"
@@ -77,9 +78,17 @@ def check_kalshi(a) -> bool:
     try:
         payload, _ = k._request("GET", "/portfolio/balance")
         line(OK, f"Signed request works. Available balance: ${payload['balance_dollars']}")
-        for b in payload.get("balance_breakdown") or []:
-            line(INFO, f"  exchange shard {b.get('exchange_index')}: ${b.get('balance_dollars', b.get('balance'))}")
-        line(INFO, "  BTC/ETH 15-minute markets trade on shard 2: that shard needs its own balance.")
+        breakdown = payload.get("balance_breakdown")
+        a.funded_shards = None                     # None = unknown, don't filter
+        if breakdown:
+            a.funded_shards = set()
+            for b in breakdown:
+                amount = b.get("balance_dollars")
+                line(INFO, f"  exchange shard {b.get('exchange_index')}: ${amount}")
+                if amount is not None and Money.parse(str(amount)).units > 0:
+                    a.funded_shards.add(b.get("exchange_index"))
+            if 2 not in a.funded_shards:
+                line(INFO, "  BTC/ETH 15-minute markets trade on shard 2, which has no balance yet.")
     except Exception as e:
         line(BAD, f"Signed request failed: {e}")
         return False
@@ -91,7 +100,7 @@ def check_kalshi(a) -> bool:
             ok = False
     try:
         lag = time.time() - k.data_as_of()
-        line(OK, f"Account data is {lag:.1f} s behind live (normal is a few seconds)")
+        line(OK, "Account data is current" if lag <= 1 else f"Account data is {lag:.1f} s behind (a few seconds is normal)")
     except Exception as e:
         line(BAD, f"User data timestamp: {e}")
         ok = False
@@ -104,20 +113,26 @@ def demo_order_test(k: KalshiExchange, a) -> bool:
     if a.kalshi_env != "demo":
         line(BAD, "--demo-order-test only runs against the DEMO exchange. Refusing.")
         return False
-    url = k.base + "/markets?series_ticker=KXBTC15M&status=open&limit=5"
+    funded = getattr(a, "funded_shards", None)
+    url = k.base + "/markets?status=open&limit=200"
     markets = json.load(urllib.request.urlopen(url, timeout=20)).get("markets", [])
-    if not markets:
-        line(BAD, "No open BTC 15-minute market on demo right now; try again in a few minutes.")
+    candidates = [x for x in markets if x.get("market_type", "binary") == "binary"
+                  and (funded is None or x.get("exchange_index", 0) in funded)]
+    if not candidates:
+        line(BAD, "No open market on a shard that has a balance. Fund a shard on demo.kalshi.co and retry.")
         return False
-    m = markets[0]["ticker"]
-    side = None
-    for s in ("yes", "no"):
-        book = k.orderbook(m, s)
-        if book["ask"] is None or book["ask"] >= "0.050000":
-            side = s
+    five_cents = Money.parse("0.05")
+    m = side = None
+    for x in candidates[:20]:                    # need a side whose ask is far above $0.01
+        for s in ("yes", "no"):
+            book = k.orderbook(x["ticker"], s)
+            if book["ask"] is None or Money.parse(book["ask"]) >= five_cents:
+                m, side = x["ticker"], s
+                break
+        if m:
             break
-    if side is None:
-        line(BAD, "Both sides are priced under 5 cents; skipping to avoid any chance of a fill.")
+    if m is None:
+        line(BAD, "No suitable market found (every side priced under 5 cents); try again later.")
         return False
     coid = f"atlas-{side}-buy-{uuid.uuid4()}"
     line(INFO, f"Placing 1 {side.upper()} at $0.01 immediate-or-cancel on {m} (demo, cannot fill)")

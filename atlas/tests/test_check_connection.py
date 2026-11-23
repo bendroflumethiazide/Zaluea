@@ -24,7 +24,8 @@ def setup(monkeypatch, now):
                         lambda base, signer, subaccount=None: KalshiExchange(base, signer, subaccount=subaccount,
                                                                              transport=sim, clock=lambda: now,
                                                                              min_interval=0))
-    listing = json.dumps({"markets": [{"ticker": "KXBTC15M-26NOV231200-00"}]}).encode()
+    listing = json.dumps({"markets": [{"ticker": "KXBTC15M-26NOV231200-00", "exchange_index": 0,
+                                       "market_type": "binary"}]}).encode()
     monkeypatch.setattr(cc.urllib.request, "urlopen", lambda url, timeout=20: io.BytesIO(listing))
     monkeypatch.setattr(cc.time, "time", lambda: now)
     return fake, sim
@@ -75,3 +76,13 @@ def test_config_with_windows_bom_is_read(tmp_path):
     cfg = tmp_path / "config.json"
     cfg.write_bytes(b"\xef\xbb\xbf" + json.dumps({"kalshi_env": "demo"}).encode())
     assert cc.load_config(cfg) == {"kalshi_env": "demo"}
+
+
+def test_order_test_skips_unfunded_shards(monkeypatch, capsys):
+    import time
+    fake, sim = setup(monkeypatch, time.time())
+    k = KalshiExchange(DEMO, None, transport=sim, min_interval=0)
+    a = args(demo_order_test=True)
+    a.funded_shards = {2}                       # the only listed market is on shard 0
+    assert cc.demo_order_test(k, a) is False
+    assert fake.orders == {} and "No open market on a shard" in capsys.readouterr().out
