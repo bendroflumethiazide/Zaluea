@@ -11,7 +11,7 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | 2. Safety foundation | ✅ Done, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
 | Dashboard | ✅ Built; shows real safety data, the live scanner and shadow trading read-only with `--data`; correlation panel still sample |
 | 3. Market data | ✅ Done: real Kalshi + Alpaca clients, BTC reference, esports identity; see [`docs/05-phase3-report.md`](docs/05-phase3-report.md) |
-| 4. Analytics | ◐ Built and tested ([report](docs/07-phase4-report.md)); final 4-month backtest running |
+| 4. Analytics | ✅ Done ([report](docs/07-phase4-report.md)): 4-month backtest found no reliable edge; that strategy is retired |
 | 5. Shadow trading | ◐ Built and tested ([report](docs/08-phase5-report.md)); collecting live evidence |
 | 6–10 | Not started |
 

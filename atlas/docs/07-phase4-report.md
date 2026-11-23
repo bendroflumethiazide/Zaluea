@@ -29,11 +29,35 @@ Date: 2026-11-23. Nothing in this phase can trade: strategies only produce candi
 
 ## 3. Backtest result
 
-See `docs/06-btc15m-backtest.md` (filled in when the full data set has downloaded).
+Full report: `docs/06-btc15m-backtest.md`. It covers 11,845 settled BTC 15-minute markets from 2026-07-21 to 2026-11-23, and every one of them has minute quotes.
+
+**Verdict: NO RELIABLE EDGE.** The buy-the-favorite strategy is **retired from trading**. It stays in the scanner only as a labelled signal.
+
+| | Out-of-sample (the verdict) | Zero-slippage sensitivity |
+|---|---:|---:|
+| Trades | 112 (needs 200) | 706 |
+| Win rate | 92.9% | — |
+| Net P&L | −$8.33 | −$22.18 |
+| Mean per trade | −$0.074 | −$0.031 |
+| t-statistic | −1.57 (needs ≥ +2) | −1.69 |
+
+**Why it fails:**
+- It wins about 93% of its trades, but each win pays a few cents. One loss costs about $1.80.
+- At the prices it buys, a 93% win rate is roughly what the price already implies, so fees and spread push the result negative.
+- The market's own price predicts outcomes better than the model: Brier score 0.0927 against the model's 0.0981.
+- On the full data set the model is also **miscalibrated** in 4 of 10 probability buckets:
+  - It is *under*-confident between 60% and 90%. For example, events it gave 75% happened 81.6% of the time.
+  - It is *over*-confident below 10%: events it gave 2.4% happened 3.9% of the time.
+  - A smaller, recent-only sample had hidden this.
+
+**How this result was nearly wrong.** The first full run silently used only the recent ~6,500 markets. The downloader had read the archive's candles with the live API's field names, so every archived quote was stored empty. The tell was that the first six weeks produced no trades at all. The downloader was fixed, the 5,296 affected markets were re-downloaded, and a test now covers both formats. Only 6 markets still have no quotes.
+
+**What replaced it.** Phase 5 shadow-tests a resting-order (maker) strategy that earns the spread instead of paying it. It runs on live data and must clear decision rules fixed in advance (`docs/08-phase5-report.md`).
 
 ## 4. Honest limits
 
 - **Historical fills are assumed.** Kalshi's archive has no order-book depth, so the backtest assumes the ask could be filled. That is optimistic.
+- **Model calibration needs work before any model-driven strategy trades.** The volatility model is under-confident for favorites and over-confident for long shots. Any new model must beat the market's own Brier score out of sample first.
 - **The historical BTC reference uses two sources** (Coinbase, Bitstamp): Kraken's public history only covers about the last 12 hours. Live scanning uses all three.
 - **ETF holdings data isn't bundled.** Holdings must come from a dated, sourced file. Without one, equities and ETFs are grouped together conservatively.
 - **Sector labels cover about 20 large caps.** Anything else is "Unknown" and grouped conservatively.
