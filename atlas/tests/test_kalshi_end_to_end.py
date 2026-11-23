@@ -73,7 +73,7 @@ def test_timeout_before_processing_holds_then_releases_without_retry(st):
     st.ready()
     st.sim.http_faults.append("timeout_before")
     r = st.buy(st.proposal(market="KXBTC15M-A", qty=2))
-    assert r.status == "unknown" and st.gw.ledger.snapshot(st.day).reserved == M("1.79")
+    assert r.status == "unknown" and st.gw.ledger.snapshot(st.day).reserved == M("1.80")
     st.advance(130)
     st.gw.clock_guard.check()
     st.gw.reconcile()

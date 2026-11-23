@@ -120,16 +120,50 @@ def min_money(*xs: Money) -> Money:
 # ---------------------------------------------------------------------------
 # Kalshi fees
 # ---------------------------------------------------------------------------
-# Kalshi rounds the trade fee up to $0.000001 and then charges a "rounding fee" that brings the
-# balance back to a $0.0001 (direct) or $0.01 (non-direct) grid (docs: getting_started/fee_rounding).
-# For sub-cent prices the total can exceed the cent-rounded model fee by just under one cent, so
-# every reservation adds this allowance. Spending records only the fees actually charged.
-KALSHI_ROUNDING_ALLOWANCE = Money(10_000)          # $0.01
+# Kalshi fee rounding (docs: getting_started/fee_rounding). For EACH FILL Kalshi charges
+#   trade fee    = model fee rounded up to $0.000001
+#   rounding fee = whatever brings the balance back to its grid ($0.0001 direct, $0.01 non-direct)
+#   rebate       = accumulated rounding returned in whole grid steps, capped so a fill's net fee >= 0
+# The per-order accumulator makes the total converge toward one fill's cost, but because the rebate
+# is capped, an order filled in many small pieces can pay up to just under $0.01 of rounding PER FILL.
+KALSHI_ROUNDING_ALLOWANCE = Money(10_000)          # $0.01: the most rounding one fill can add
 
 
 def kalshi_worst_case_fee(contracts: int, price: Money, multiplier_pct: int = 100) -> Money:
-    """Upper bound of everything Kalshi can charge for one taker order."""
-    return kalshi_taker_fee(contracts, price, multiplier_pct) + KALSHI_ROUNDING_ALLOWANCE
+    """PROVABLE upper bound of everything Kalshi can charge for one order of `contracts`, however
+    it is split into fills: cent-rounded model fee + $0.01 per possible fill (at most one per contract).
+
+    Proof: fill i pays trade_i + rounding_i - rebate_i <= (m_i + $0.000001) + $0.009999 = m_i + $0.01,
+    where m_i is that fill's exact model fee. Summing over n <= C fills: total <= sum(m_i) + C x $0.01
+    <= ceil_cent(model fee for C) + C x $0.01, because the model fee is linear in the contract count.
+    """
+    return kalshi_taker_fee(contracts, price, multiplier_pct) + KALSHI_ROUNDING_ALLOWANCE * contracts
+
+
+class KalshiFeeAccumulator:
+    """Exact per-fill fee mechanics from Kalshi's fee_rounding docs, for ONE order (used by the
+    simulator). `grid` is the account's balance precision: $0.01 (non-direct members, the more
+    expensive case and the default here) or $0.0001 (direct members)."""
+
+    def __init__(self, grid: Money = Money(10_000)):
+        self.grid = grid.units
+        self.carry = 0                     # accumulated rounding overpayment, in units
+
+    def fill(self, contracts: int, price: Money, rate_bp: int, multiplier_pct: int = 100) -> Money:
+        """Net fee for a BUY fill. rate_bp: 700 for the 0.07 taker rate, 175 for an assumed 0.0175 maker rate."""
+        p = price.units
+        if contracts <= 0 or not 0 <= p <= UNITS_PER_DOLLAR:
+            raise MoneyError("bad fill")
+        # model fee in units = rate * C * P * (1 - P) * mult; P = p / U
+        num = rate_bp * contracts * p * (UNITS_PER_DOLLAR - p) * multiplier_pct
+        trade = -(-num // (10_000 * 100 * UNITS_PER_DOLLAR))           # ceil to $0.000001
+        change = -(contracts * p) - trade                                # buyer: revenue is negative
+        aligned = (change // self.grid) * self.grid                      # floor to the balance grid
+        rounding = change - aligned
+        self.carry += rounding
+        rebate = min(self.carry // self.grid, (trade + rounding) // self.grid) * self.grid
+        self.carry -= rebate
+        return Money(trade + rounding - rebate)
 
 
 def kalshi_taker_fee(contracts: int, price: Money, multiplier_pct: int = 100) -> Money:

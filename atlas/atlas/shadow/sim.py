@@ -10,9 +10,10 @@ than none):
   * Resting (maker) orders fill ONLY when a real public trade, printed after the order became
     active, sold into it: a trade strictly through the price fills us; a trade AT the price
     first consumes the size that was queued ahead of us when we joined.
-  * Fees: taker fills pay the worst-case Kalshi fee (model fee rounded up + rounding allowance).
-    Maker fills pay `maker_fee_pct` percent of the taker formula (default 25% = 0.0175, a
-    pessimistic assumption because the maker rule could not be verified in Kalshi's docs).
+  * Fees: charged per fill exactly as Kalshi's fee_rounding docs describe (trade fee rounded to
+    $0.000001, a rounding fee back to a $0.01 balance grid, rebates through a per-order accumulator).
+    Taker fills use the 0.07 rate. Maker fills use `maker_fee_pct` percent of it (default 25% =
+    0.0175, a pessimistic assumption: the maker rule for this series could not be verified).
   * Orders expire at their expiry time; markets settle from the exchange's published result.
 
 Accounting uses the real ATLAS Ledger class on a SEPARATE file, so simulated money gets the
@@ -23,9 +24,10 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
-from ..money import KALSHI_ROUNDING_ALLOWANCE, Money, kalshi_taker_fee, kalshi_worst_case_fee
+from ..money import KalshiFeeAccumulator, Money
 
 ONE = Money.dollars(1)
+TAKER_RATE_BP = 700            # Kalshi's 0.07 quadratic rate
 
 
 @dataclass
@@ -64,6 +66,7 @@ class SimOrder:
     fills: list = field(default_factory=list)   # (fill_id, qty, price, fee, ts)
     cancel_at: float | None = None
     end_reason: str = ""
+    fees: KalshiFeeAccumulator = field(default_factory=KalshiFeeAccumulator)   # per-order, as Kalshi does
 
 
 class SimExchange:
@@ -129,7 +132,7 @@ class SimExchange:
         if o.kind == "taker":
             if b and b.ask is not None and b.ask <= o.limit and b.ask_size > 0:
                 q = min(o.qty, b.ask_size)
-                fee = kalshi_worst_case_fee(q, b.ask, o.fee_multiplier_pct)
+                fee = o.fees.fill(q, b.ask, TAKER_RATE_BP, o.fee_multiplier_pct)
                 self._fill(o, q, b.ask, fee, o.active_at, out)
                 b.ask_size -= q                          # we consumed that liquidity
             o.status = "filled" if o.filled == o.qty else "cancelled"   # IOC: the rest is cancelled
@@ -160,16 +163,20 @@ class SimExchange:
         q = min(available, o.qty - o.filled)
         if q <= 0:
             return available
-        self._fill(o, q, o.limit, self.maker_fee(q, o.limit, o.fee_multiplier_pct), t.ts, out)
+        fee = o.fees.fill(q, o.limit, TAKER_RATE_BP * self.maker_fee_pct // 100, o.fee_multiplier_pct)
+        self._fill(o, q, o.limit, fee, t.ts, out)
         if o.filled == o.qty:
             o.status = "filled"
         return available - q
 
     def maker_fee(self, qty: int, price: Money, fee_multiplier_pct: int) -> Money:
-        """Assumed fee for a resting fill: maker_fee_pct% of the taker formula, plus the rounding allowance."""
-        if not self.maker_fee_pct:
-            return Money.ZERO
-        return kalshi_taker_fee(qty, price, fee_multiplier_pct * self.maker_fee_pct // 100) + KALSHI_ROUNDING_ALLOWANCE
+        """Fee of ONE resting fill of `qty` at the assumed maker rate (used for hypothetical results)."""
+        return KalshiFeeAccumulator().fill(qty, price, TAKER_RATE_BP * self.maker_fee_pct // 100, fee_multiplier_pct)
+
+    @staticmethod
+    def taker_fee(qty: int, price: Money, fee_multiplier_pct: int) -> Money:
+        """Fee of ONE taker fill of `qty` (used for hypothetical results)."""
+        return KalshiFeeAccumulator().fill(qty, price, TAKER_RATE_BP, fee_multiplier_pct)
 
     def _fill(self, o: SimOrder, q: int, price: Money, fee: Money, ts: float, out: list) -> None:
         o.filled += q

@@ -1,6 +1,6 @@
 # Phase 5 report: shadow trading
 
-**Status:** built and tested (29 new tests; the full suite of 232 passes). It now needs to run for weeks to
+**Status:** built and tested (32 new tests; the full suite of 235 passes). It now needs to run for weeks to
 collect live evidence. No real order was placed, and none can be: shadow trading has no key, no gateway and no
 order code.
 
@@ -44,9 +44,9 @@ feed, so Phase 5 was built for that.
   - One public trade is never counted twice. A trade time-stamped after "now" is never used.
   - An order that would cross the ask is rejected (post-only).
 - **Fees:**
-  - Orders that buy at the ask pay the worst-case Kalshi fee: the formula rounded up, plus the $0.01 rounding allowance.
-  - Resting fills pay an assumed **0.0175 × C × P × (1 − P)** fee plus the allowance. That is a quarter of the taker rate.
-  - Kalshi lists the BTC 15-minute series as plain `quadratic`, which suggests makers pay **nothing** there, but this could not be confirmed from the documentation. The report therefore also shows the result with no maker fee.
+  - The simulator charges fees per fill, exactly as Kalshi's fee-rounding documentation describes. The trade fee is rounded to $0.000001. A rounding fee then brings the balance back to the cent; the more expensive of the two account types is assumed. A per-order accumulator rebates the over-payment, and a test reproduces Kalshi's worked example ($0.005).
+  - Orders that buy at the ask use the 0.07 rate.
+  - Resting fills use an **assumed 0.0175 rate**, a quarter of the taker rate. Kalshi lists the BTC 15-minute series as plain `quadratic`, which suggests makers pay **nothing** there, but this could not be confirmed from the documentation. The report therefore also shows the result with no maker fee.
 - **Settlement.** The payout is $1 per winning contract with no fee, from Kalshi's published result.
 - **Restarts.** Simulated orders live in memory. After a restart, any order the ledger still shows as open is cancelled, and a note is logged.
 
@@ -81,6 +81,7 @@ live data.
 - **The maker's guards fire often, as intended.** For example, the model's value fell below $0.03 per contract after fees, or BTC moved more than one standard deviation against a side within 60 s.
 - **A flaw found by the first live run, and fixed.** The first version withdrew a bid whenever the market's best bid slipped by one cent. On live data, its two bids lived 2–6 seconds each and never filled, and both would have won (+$0.44 hypothetical). A rule like that can never gather evidence. Since the fix, a resting bid stays while the model still values it above **its own price** after fees and no flip guard fires. It is cancelled when the value is gone, when a guard fires, or at minute 14. Two tests cover this.
 - **A second flaw found live, and fixed, in both strategies.** Right after a restart, the strategy bid $0.50 for YES eleven seconds after the price had dropped from $0.60, and was filled at once. That is the "falling knife" pattern the flip guard exists to block. But the guard compares against the price two minutes earlier, and with no history yet it was silently **skipped**. It now **fails closed**: no new order until two minutes of the market's own prices are available. The original buy-the-favorite strategy had the same gap and is fixed too.
+- **A gap in the REAL safety bound, found through a simulated partial fill, and fixed.** Kalshi rounds fees per fill, and its rebate of over-paid rounding is capped. An order filled in many small pieces can therefore pay up to just under $0.01 of rounding **per fill**, while ATLAS reserved $0.01 **per order**. Both the primary and the independent shadow risk manager now reserve the provable bound: model fee rounded up to the cent plus **$0.01 per contract** (an order can never have more fills than contracts). A test checks the bound against every possible way of splitting orders of 1–6 contracts at five prices. Effect: a 2-contract $0.88 order now reserves $1.80 instead of $1.79. Strategies size orders on this worst case but value them on the expected fee, so backtests still use the exact fee.
 - **Every unfilled order now records why it ended.** Possible reasons: withdrawn by the strategy, post-only rejection (the ask fell to our price during the 1-second delay), too little shown at the ask, or the time limit.
 
 These are observations, not results. Results need weeks.

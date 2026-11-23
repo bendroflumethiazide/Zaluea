@@ -24,7 +24,7 @@ from ..clock import accounting_day
 from ..exchange.kalshi import KalshiExchange
 from ..limits import DEFAULTS, Limits
 from ..marketdata.btc import BtcReference, recent_history
-from ..money import Money, kalshi_worst_case_fee
+from ..money import Money
 from ..proposal import Proposal, Quote
 from ..risk.primary import fee_multiplier_pct
 from ..strategies.base import MarketView, Series, Signal
@@ -172,7 +172,7 @@ class ShadowRunner:
                          kind=ev["kind"], qty=ev["qty"], price=ev["price"], fee=ev["fee"], coid=ev["coid"])
         if ev["kind"] in ("cancelled", "expired") and ev["qty"] > 0:
             fee = acct.sim.maker_fee(ev["qty"], o.limit, o.fee_multiplier_pct) if o.kind == "maker" else \
-                kalshi_worst_case_fee(ev["qty"], o.limit, o.fee_multiplier_pct)
+                acct.sim.taker_fee(ev["qty"], o.limit, o.fee_multiplier_pct)
             self.journal.add(ts=ev["ts"], day=day, account=acct.name, strategy=s.name, market=o.market,
                              side=o.side, kind="missed", qty=ev["qty"], price=o.limit, fee=fee, coid=ev["coid"],
                              detail=f"{ev['qty']} of {o.qty} not filled: {o.end_reason or ev['kind']}")

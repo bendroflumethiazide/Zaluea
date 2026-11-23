@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 
 from ..analytics.probability import BP, expected_value
-from ..money import Money, kalshi_worst_case_fee
+from ..money import Money, kalshi_taker_fee, kalshi_worst_case_fee
 from .base import MarketView, NoTrade, Signal, Strategy, StrategyConfig
 
 ONE = Money.dollars(1)
@@ -142,12 +142,11 @@ class CryptoFlipFavorite(Strategy):
                 why.append(f"BTC jumped {Money(toward)} toward the strike in {c.jump_window_s} s")
 
         # ---- size and value (exact Money)
-        qty, fee = 0, Money.ZERO
-        while True:
-            f = kalshi_worst_case_fee(qty + 1, ask, v.fee_multiplier_pct)
-            if ask * (qty + 1) + f + self.slip * (qty + 1) > v.max_order:
-                break
-            qty, fee = qty + 1, f
+        qty = 0                                    # size on the PROVABLE worst-case fee (never under-reserve)...
+        while ask * (qty + 1) + kalshi_worst_case_fee(qty + 1, ask, v.fee_multiplier_pct) \
+                + self.slip * (qty + 1) <= v.max_order:
+            qty += 1
+        fee = kalshi_taker_fee(qty, ask, v.fee_multiplier_pct) if qty else Money.ZERO   # ...value on the expected fee
         if qty == 0:
             why.append(f"Even one contract at {ask} plus fee exceeds the {v.max_order} purchase limit")
             return no(why, prob_bp=prob_bp, z=z)

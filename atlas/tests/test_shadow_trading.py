@@ -15,7 +15,7 @@ import pytest
 from atlas.ledger import Ledger
 from atlas.limits import DEFAULTS
 from atlas.marketdata.btc import Reference
-from atlas.money import KALSHI_ROUNDING_ALLOWANCE, Money, kalshi_taker_fee, kalshi_worst_case_fee
+from atlas.money import KalshiFeeAccumulator, Money, kalshi_taker_fee, kalshi_worst_case_fee
 from atlas.paths import initialize
 from atlas.proposal import Proposal, Quote
 from atlas.shadow.account import SeparationError, SimAccount, research_limits
@@ -40,14 +40,16 @@ def trade(i, yes_price, count, taker_side, ts):
 
 
 # ----------------------------------------------------------------------------- the simulator
-def test_taker_fill_is_limited_to_displayed_size_and_pays_the_worst_case_fee():
+def test_taker_fill_is_limited_to_displayed_size_and_pays_kalshis_exact_fee():
     sx = SimExchange(latency_s=1.0)
     sx.update_book("MKT", "yes", book("0.40", "0.42", ask_size=3))
     sx.submit("c1", "MKT", "yes", 5, M("0.42"), "taker", T0, T0 + 10)
     assert sx.step(T0 + 0.5) == []                         # latency: nothing happens yet
     fills = sx.step(T0 + 1.0)
     assert [(f[2], f[3]) for f in fills] == [(3, M("0.42"))]          # partial: only 3 displayed
-    assert fills[0][4] == kalshi_worst_case_fee(3, M("0.42")) == kalshi_taker_fee(3, M("0.42")) + KALSHI_ROUNDING_ALLOWANCE
+    # 0.07 x 3 x 0.42 x 0.58 = $0.051156; with the cost of $1.26 the balance is rounded to the cent: $0.06
+    assert fills[0][4] == M("0.06") == kalshi_taker_fee(3, M("0.42"))
+    assert fills[0][4] <= kalshi_worst_case_fee(3, M("0.42"))
     assert sx.orders["c1"].status == "cancelled"           # immediate-or-cancel: the rest is gone
 
 
@@ -153,8 +155,8 @@ def test_orders_expire():
 
 
 def test_maker_fee_assumption_is_pessimistic_and_can_be_switched_off():
-    assert SimExchange(maker_fee_pct=25).maker_fee(4, M("0.50"), 100) == \
-        kalshi_taker_fee(4, M("0.50"), 25) + KALSHI_ROUNDING_ALLOWANCE
+    # 0.0175 x 4 x 0.5 x 0.5 = $0.0175 -> $0.02 after rounding the balance to the cent
+    assert SimExchange(maker_fee_pct=25).maker_fee(4, M("0.50"), 100) == M("0.02")
     assert SimExchange(maker_fee_pct=0).maker_fee(4, M("0.50"), 100) == Money.ZERO
 
 
@@ -444,3 +446,39 @@ def test_every_unfilled_order_records_why_it_ended():
     sx.submit("t1", "MKT", "yes", 2, M("0.40"), "taker", T0 + 2, T0 + 4)
     sx.step(T0 + 3)
     assert "ask moved" in sx.orders["t1"].end_reason
+
+
+def test_partial_fills_never_pay_more_fee_than_one_whole_order():
+    sx = SimExchange(latency_s=0.0)
+    sx.update_book("MKT", "yes", book("0.35", "0.40", bid_size=0))
+    sx.submit("m1", "MKT", "yes", 5, M("0.36"), "maker", T0, T0 + 600)
+    sx.step(T0)
+    fills = []
+    for i in range(5):                                   # five one-contract fills
+        fills += sx.step(T0 + 1 + i, {"MKT": [trade(i, "0.36", 1, "no", T0 + 0.5 + i)]})
+    assert sum(f[2] for f in fills) == 5
+    assert sum((f[4] for f in fills), Money.ZERO) == sx.maker_fee(5, M("0.36"), 100)
+
+
+def test_fee_mechanics_match_kalshis_worked_example():
+    # docs/fee_rounding: a buy with -$0.055 revenue and a $0.00363825 model fee costs $0.005 in total
+    assert KalshiFeeAccumulator().fill(1, M("0.055"), 700) == M("0.005")
+
+
+def test_worst_case_fee_bounds_any_split_into_fills():
+    import itertools
+    for price in ("0.055", "0.36", "0.42", "0.88", "0.997"):
+        p = M(price)
+        for qty in range(1, 7):
+            bound = kalshi_worst_case_fee(qty, p)
+            for cuts in itertools.product((0, 1), repeat=qty - 1):          # every way to split the order
+                sizes, run = [], 1
+                for c in cuts:
+                    if c:
+                        sizes.append(run); run = 1
+                    else:
+                        run += 1
+                sizes.append(run)
+                acc = KalshiFeeAccumulator()
+                total = sum((acc.fill(s, p, 700) for s in sizes), Money.ZERO)
+                assert total <= bound, (price, sizes, total, bound)

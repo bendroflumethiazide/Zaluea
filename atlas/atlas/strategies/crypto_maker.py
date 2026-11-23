@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 
 from ..analytics.probability import BP, expected_value
-from ..money import KALSHI_ROUNDING_ALLOWANCE, Money, kalshi_taker_fee, kalshi_worst_case_fee
+from ..money import KalshiFeeAccumulator, Money, kalshi_worst_case_fee
 from .base import MarketView, NoTrade, Signal, Strategy, StrategyConfig
 from .crypto_flip import phi, sigma_per_minute
 
@@ -51,9 +51,8 @@ class MakerConfig(StrategyConfig):
 
 
 def maker_fee(qty: int, price: Money, multiplier_pct: int, maker_fee_pct: int) -> Money:
-    if not maker_fee_pct:
-        return Money.ZERO
-    return kalshi_taker_fee(qty, price, multiplier_pct * maker_fee_pct // 100) + KALSHI_ROUNDING_ALLOWANCE
+    """Expected fee of one resting fill under the assumed maker rate (maker_fee_pct% of 0.07)."""
+    return KalshiFeeAccumulator().fill(qty, price, 7 * maker_fee_pct, multiplier_pct)
 
 
 class CryptoMaker(Strategy):

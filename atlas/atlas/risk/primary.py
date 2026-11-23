@@ -40,7 +40,7 @@ def fee_multiplier_pct(fee_type: str | None, multiplier: str | None) -> int | No
 
 
 def worst_case_fee(module: str, qty: int, price: Money, multiplier_pct: int = 100) -> Money:
-    """Highest total fee this order could incur (model fee + Kalshi rounding allowance)."""
+    """Provable upper bound of the total fee (cent-rounded model fee + $0.01 rounding per possible fill)."""
     if module in ("kalshi", "esports"):
         return kalshi_worst_case_fee(qty, price, multiplier_pct)
     if module in ("stocks", "etfs"):

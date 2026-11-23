@@ -185,10 +185,10 @@ def test_timeout_before_accept_keeps_reservation_until_confirmed(st):
     st.ex.faults.append("timeout_before_accept")
     r = st.buy(st.proposal(qty=2))
     assert r.status == "unknown" and ex_orders(st) == []
-    assert st.gw.ledger.snapshot(st.day).reserved == M("1.79")  # $1.76 + $0.02 fee + $0.01 rounding allowance
+    assert st.gw.ledger.snapshot(st.day).reserved == M("1.80")  # $1.76 + $0.02 fee + 2 x $0.01 rounding (one per possible fill)
     st.advance(60)
     st.gw.reconcile()
-    assert st.gw.ledger.snapshot(st.day).reserved == M("1.79")
+    assert st.gw.ledger.snapshot(st.day).reserved == M("1.80")
     st.advance(70)                                             # > 120 s: exchange confirms no such order
     st.gw.clock_guard.check()
     st.gw.reconcile()
