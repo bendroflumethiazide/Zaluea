@@ -83,7 +83,7 @@ def check_kalshi(a) -> bool:
         if breakdown:
             a.funded_shards = set()
             for b in breakdown:
-                amount = b.get("balance_dollars")
+                amount = b.get("balance")            # IndexedBalance.balance: fixed-point dollars (spec 3.37.0)
                 line(INFO, f"  exchange shard {b.get('exchange_index')}: ${amount}")
                 if amount is not None and Money.parse(str(amount)).units > 0:
                     a.funded_shards.add(b.get("exchange_index"))

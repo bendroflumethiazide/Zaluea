@@ -50,7 +50,11 @@ def test_read_only_check_places_nothing(monkeypatch, capsys):
 def test_demo_order_test_cannot_fill(monkeypatch, capsys):
     import time
     fake, sim = setup(monkeypatch, time.time())
-    assert cc.check_kalshi(args(demo_order_test=True))
+    a = args(demo_order_test=True)
+    assert cc.check_kalshi(a)
+    assert a.funded_shards == {0}                       # read from the spec's balance_breakdown
+    out = capsys.readouterr().out
+    assert "exchange shard 0: $50.000000" in out and "$None" not in out
     (o,) = fake.orders.values()
     assert o.qty == 1 and o.filled == 0 and o.status == "cancelled" and o.limit == 10_000   # $0.01
     assert fake.positions() == []

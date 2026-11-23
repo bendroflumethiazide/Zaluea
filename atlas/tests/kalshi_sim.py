@@ -72,8 +72,11 @@ class KalshiSim:
                                     "close_time": _iso(ex.clock() + 600), "exchange_index": 0,
                                     "market_type": "binary"}}
         if method == "GET" and path == "/portfolio/balance":
+            # Per spec: balance_breakdown is a list of IndexedBalance {exchange_index, balance}.
+            # The sim keeps all money on shard 0, like a fresh demo account.
+            breakdown = [{"exchange_index": i, "balance": _s(ex.balance_units if i == 0 else 0)} for i in range(4)]
             return 200, {"balance": ex.balance_units // 10_000, "balance_dollars": _s(ex.balance_units),
-                         "portfolio_value": 0, "updated_ts": int(ex.clock())}
+                         "portfolio_value": 0, "updated_ts": int(ex.clock()), "balance_breakdown": breakdown}
         if method == "GET" and path == "/portfolio/positions":
             out = []
             for (mk, sd), (qty, cost) in ex.positions_map.items():
