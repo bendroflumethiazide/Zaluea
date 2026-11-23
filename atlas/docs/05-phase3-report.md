@@ -59,9 +59,14 @@ I read Kalshi's OpenAPI spec 3.37.0 and its guides, and Alpaca's API reference, 
 
 The simulator now reproduces both behaviours, so tests cover them.
 
+**Alpaca paper (2026-11-23).** `check_connection` passed with the owner's paper key:
+- **Account:** ACTIVE, $100,000 paper cash.
+- **Defaults were unsafe:** Alpaca defaulted to margin ×2 (configurable up to ×4) and short selling. `--apply-safe-settings` switched the account to long-only, no margin and no options, and the account confirmed it immediately.
+- **The after-hours SPY quote was $671.14 / $714.05,** a 6% spread. ATLAS's 0.30% stock spread limit would refuse to trade on it, a live example of why that check exists.
+
 ## 4. Not done or limited (honest list)
 
-- **Alpaca has not been called with real (paper) keys yet.** Kalshi demo is verified as described above.
+- **Both practice accounts are verified live** (Kalshi demo, Alpaca paper). No real-money account has been connected.
 - **Stock and ETF execution is disabled** until the ledger supports exact fractional shares (Phase 6). Market data, account safety checks and order building are done.
 - **Esports trading stays disabled:** there is no reliable live game-state feed (they are paid services). Identity validation works.
 - **WebSocket streaming** (faster fills and order-book updates) is not built. REST polling is used. Faster flip detection comes with the strategy work.
