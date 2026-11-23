@@ -11,8 +11,14 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | 2. Safety foundation | ✅ Done, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
 | Dashboard | ✅ Built; shows real safety data read-only with `--data`; market panels still sample |
 | 3. Market data | ✅ Done: real Kalshi + Alpaca clients, BTC reference, esports identity; see [`docs/05-phase3-report.md`](docs/05-phase3-report.md) |
-| 4. Analytics (probability, EV, strategies, correlation) | Next |
-| 5–10 | Not started |
+| 4. Analytics | ◐ Built and tested ([report](docs/07-phase4-report.md)); final 4-month backtest running |
+| 5. Shadow trading | Next |
+| 6–10 | Not started |
+
+**Live scanner (no keys, cannot trade):**
+`python -m atlas.init_data --data "$env:USERPROFILE\.atlas\data"` once, then
+`python -m atlas.scanner --data "$env:USERPROFILE\.atlas\data"` and, in a second window,
+`python dashboard\server.py --data "$env:USERPROFILE\.atlas\data"`.
 
 **Connect your practice accounts:** follow [`docs/04-connecting.md`](docs/04-connecting.md), then run
 `python -m atlas.check_connection` (read-only unless you add `--demo-order-test`).

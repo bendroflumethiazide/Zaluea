@@ -21,7 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
@@ -42,7 +42,9 @@ class Http:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "atlas-research/1.0"})
                 with urllib.request.urlopen(req, timeout=30) as r:
-                    return json.loads(r.read(), parse_float=str)   # exact text, never floats
+                    data = json.loads(r.read(), parse_float=str)   # exact text, never floats
+                self.min_interval = max(0.25, self.min_interval * 0.97)   # recover after rate limiting
+                return data
             except urllib.error.HTTPError as e:
                 if e.code == 429 or e.code >= 500:
                     self.min_interval = min(2.0, self.min_interval * 1.3)
@@ -86,7 +88,7 @@ def main():
     http = Http()
     since = int(time.time()) - a.days * 86_400
     cutoff = iso(http.get(f"{BASE}/historical/cutoff")["market_settled_ts"])
-    log(f"historical cutoff {datetime.utcfromtimestamp(cutoff)}Z")
+    log(f"historical cutoff {datetime.fromtimestamp(cutoff, timezone.utc):%Y-%m-%d %H:%M}Z")
 
     markets, cursor = [], None
     while True:                                     # recent (live) settled markets
@@ -134,8 +136,8 @@ def main():
                f"&end_ts={m['close_ts']}&period_interval=1")
         d = http.get(url) or {}
         quotes[m["ticker"]] = rows(d.get("candlesticks", []))
-        if i % 500 == 0:
-            log(f"archived quotes {i}/{len(archived)}")
+        if i % 250 == 0:
+            log(f"archived quotes {i}/{len(archived)} (pace {http.min_interval:.2f} s)")
             qpath.write_text(json.dumps(quotes))
     qpath.write_text(json.dumps(quotes))
     log(f"quotes for {len(quotes)} markets")
