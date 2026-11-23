@@ -30,6 +30,18 @@ def st(tmp_path):
     s.gw.stop()
 
 
+def with_missing_ledger(paths):
+    """Same data folder, but the ledger file cannot be found. (Renaming an open
+    database file is not allowed on Windows, so the failure is simulated here.)"""
+    from atlas.paths import DataPaths
+
+    class Broken(DataPaths):
+        @property
+        def ledger(self):
+            return self.root / "ledger-missing.db"
+    return Broken(paths.root)
+
+
 def make_wd(st):
     wd = Watchdog(st.paths, exchange=st.ex, clock=st.now)
     wd.start()
@@ -105,8 +117,8 @@ def test_detects_risk_manager_failure(st):
 
 def test_detects_database_failure(st):
     healthy(st)
-    st.paths.ledger.rename(st.paths.ledger.with_suffix(".moved"))
     wd = make_wd(st)
+    wd.paths = with_missing_ledger(st.paths)
     findings = wd.check_once()
     assert any(f.check in ("database", "ledger") for f in findings)
     assert "integrity" in lock_kinds(st)
@@ -116,10 +128,9 @@ def test_detects_database_failure(st):
 def test_watchdog_lock_disables_new_orders(st):
     st.ready()
     healthy(st)
-    st.paths.ledger.rename(st.paths.ledger.with_suffix(".moved"))
     wd = make_wd(st)
+    wd.paths = with_missing_ledger(st.paths)
     wd.check_once()
-    st.paths.ledger.with_suffix(".moved").rename(st.paths.ledger)
     r = st.buy(st.proposal())
     assert r.status == "rejected" and "locked" in r.reasons[0]
     assert st.ex.orders == {}
