@@ -180,6 +180,9 @@ class Gateway:
                           data={"proposal_id": prop.proposal_id, "side": prop.side, "qty": prop.qty,
                                 "limit_price": prop.limit_price, "max_cost": cost, "prob_bp": prop.prob_bp,
                                 "expected_value": prop.expected_value, "fingerprint": fp})
+        if prop.module in ("stocks", "etfs"):
+            return self._reject(prop, "1 module", ["Live stock/ETF execution is not enabled yet: exact "
+                                "fractional-share accounting arrives in Phase 6 (analysis and paper only)"], fp)
         if prop.proposal_id in self.seen_proposals:                                    # step 11 (early)
             return self._reject(prop, "11 duplicates", ["This proposal was already processed"], fp)
         self.seen_proposals.add(prop.proposal_id)
