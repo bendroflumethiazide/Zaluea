@@ -38,6 +38,8 @@ def main():
           flush=True)
     res = walk_forward(with_quotes, ref)
     print(f"walk-forward done in {time.time() - t0:.0f} s: {res.verdict}", flush=True)
+    sens = walk_forward(with_quotes, ref, base=FlipConfig(slippage_per_contract="0.00"))
+    print(f"sensitivity (no slippage): {sens.verdict}", flush=True)
     model, market = model_calibration(with_quotes, ref, FlipConfig())
     s = res.meta["oos"]
 
@@ -82,6 +84,11 @@ def main():
         cfg = ", ".join(f"{k}={v}" for k, v in wk["config"].items())
         w(f"| {wk['week']} | {cfg} | {wk['trades']} | {wk['wins']} | {wk['pnl']} | {wk['t']:.2f} |")
     w("")
+    ss = sens.meta["oos"]
+    w("## Sensitivity: the same test with zero slippage (NOT the verdict)\n")
+    w(f"This shows how much the $0.01 slippage assumption matters. Zero slippage: {ss['trades']} trades, net {ss['pnl']}, "
+      f"mean ${ss['mean']:+.4f} per trade, t = {ss['t']:.2f}, "
+      f"{sens.meta['share_weeks_non_negative']:.0%} of weeks not losing. By the same criteria: {sens.verdict}.\n")
     if model:
         w("## Does the model predict better than the market's own price? (minute 12, all markets)\n")
         w(f"- **Model:** Brier score {brier(model):.4f}, log loss {log_loss(model):.4f}.")
