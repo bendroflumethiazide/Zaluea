@@ -1,6 +1,6 @@
 # ATLAS Phase 3: Market data report
 
-Date: 2026-11-23. Result: **166 automated tests, all passing.**
+Date: 2026-11-23. Result: **163 automated tests, all passing.**
 Nothing in this phase traded. The real clients were exercised against documented responses, a Kalshi HTTP simulator, and live **public** endpoints only.
 
 ## 1. Verified against current documentation (not memory)

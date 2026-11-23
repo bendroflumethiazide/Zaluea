@@ -62,7 +62,7 @@ atlas/
   atlas/        the platform: money, clock, storage, audit, limits, control, ledger,
                 risk/ (primary), shadowrisk/ (independent), gateway, watchdog,
                 exchange/ (fake, kalshi, alpaca), marketdata/ (btc, esports), check_connection
-  tests/        166 automated tests (Part 25 acceptance tests, clients, simulators)
+  tests/        163 automated tests (Part 25 acceptance tests, clients, simulators)
   docs/         audit, plan, phase reports
   dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```

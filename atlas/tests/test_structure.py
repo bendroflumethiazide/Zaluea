@@ -33,7 +33,13 @@ def test_only_the_gateway_places_orders():
         for n in ast.walk(tree):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "place_order":
                 callers.add(f.relative_to(PKG).as_posix())
-    assert callers == {"gateway.py"}, callers
+    # The single exception is the owner-run connection check: its demo order test
+    # places one unfillable 1-contract order and refuses anything but the DEMO
+    # exchange (see tests/test_check_connection.py::test_demo_order_test_refuses_production).
+    assert callers == {"gateway.py", "check_connection.py"}, callers
+    src = (PKG / "check_connection.py").read_text()
+    fn = src[src.index("def demo_order_test"):src.index("def check_alpaca")]
+    assert fn.index('if a.kalshi_env != "demo"') < fn.index("place_order"), "demo guard must come first"
 
 
 def test_no_floats_in_money_ledger_or_limit_code():
