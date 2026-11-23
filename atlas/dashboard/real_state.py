@@ -7,6 +7,7 @@ keep their sample data and stay labelled as samples.
 """
 from __future__ import annotations
 
+import json
 import sys
 import time
 from datetime import datetime
@@ -120,6 +121,17 @@ class RealState:
                                 "wins": len([t for t in s.closed_trades if t.day == day and t.pnl > 0]),
                                 "losses": len([t for t in s.closed_trades if t.day == day and t.pnl < 0])})
         snap["approval"] = None
+        scan = self.p.root / "scanner.json"
+        try:
+            sd = json.loads(scan.read_text()) if scan.exists() else None
+        except (OSError, ValueError):
+            sd = None
+        if sd and now - sd.get("ts", 0) < 60:
+            snap["scanner"] = sd["rows"]
+            snap["scanner_note"] = (f"Live scan {int(now - sd['ts'])} s ago. Model {sd['model']['version']}: "
+                                    f"{sd['model']['scorecard']}")
+        else:
+            snap["scanner_note"] = "Scanner not running (start: python -m atlas.scanner --data <folder>); sample rows shown"
         snap["audit_head"] = v.head_hash[:16]
         return snap
 

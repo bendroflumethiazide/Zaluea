@@ -261,8 +261,28 @@ class KalshiExchange:
                 "fee_type": s.get("fee_type"), "fee_multiplier": str(s.get("fee_multiplier")),
                 "price_level_structure": m.get("price_level_structure"), "price_ranges": m.get("price_ranges"),
                 "rules_primary": m.get("rules_primary"),
+                "strike": m.get("floor_strike"), "open_ts": _iso_ts(m["open_time"]) if m.get("open_time") else None,
+                "result": m.get("result"),
             }
         return self._market_cache[market]
+
+    def open_markets(self, series: str, limit: int = 20) -> list[dict]:
+        """Open markets of a series (public), soonest-closing first."""
+        payload, _ = self._request("GET", "/markets", {"series_ticker": series, "status": "open", "limit": limit},
+                                   auth=False)
+        return sorted(payload.get("markets", []), key=lambda m: m["close_time"])
+
+    def market_result(self, market: str) -> str | None:
+        """'yes'/'no' once settled (live or archived), else None. Not cached."""
+        try:
+            m, _ = self._request("GET", f"/markets/{urllib.parse.quote(market)}", auth=False)
+        except LookupError:
+            try:
+                m, _ = self._request("GET", f"/historical/markets/{urllib.parse.quote(market)}", auth=False)
+            except LookupError:
+                return None
+        r = (m.get("market") or {}).get("result")
+        return r if r in ("yes", "no") else None
 
     def orderbook(self, market: str, side: str) -> dict:
         """Best bid/ask for one side. Kalshi publishes only BIDS for each leg:

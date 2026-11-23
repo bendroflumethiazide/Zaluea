@@ -119,3 +119,33 @@ class BtcReference:
             return Reference(False, None, fresh, f"Sources disagree by {Money(spread)} "
                              f"(more than {self.max_dispersion_bps} bps)", now)
         return Reference(True, Money(median), fresh, "; ".join(notes) or "All sources agree", now)
+
+
+def _get_json_exact(url: str, timeout: float = 10.0):
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read(), parse_float=str)          # exact text, never floats
+
+
+def recent_history(minutes: int = 90, max_dispersion_bps: int = 30) -> list[tuple[float, Money]]:
+    """Last `minutes` of 1-minute BTC closes: mean of Coinbase and Bitstamp (= their median),
+    stamped at the END of each minute. Minutes where they disagree, or one is missing, are left out."""
+    now = int(time.time())
+    start = now - minutes * 60
+    cb = {}
+    rows = _get_json_exact("https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60&start="
+                           + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)))
+    for r in rows:
+        cb[int(r[0])] = _price(r[4])
+    bs = {}
+    d = _get_json_exact(f"https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=60&limit={min(minutes, 1000)}&start={start}")
+    for r in (d.get("data") or {}).get("ohlc") or []:
+        bs[int(r["timestamp"])] = _price(r["close"])
+    out = []
+    for t in sorted(set(cb) & set(bs)):
+        a, b = cb[t], bs[t]
+        if abs(a.units - b.units) * 10_000 > max_dispersion_bps * min(a.units, b.units):
+            continue
+        if t + 60 <= now:                                      # only completed minutes
+            out.append((float(t + 60), Money((a.units + b.units) // 2)))
+    return out

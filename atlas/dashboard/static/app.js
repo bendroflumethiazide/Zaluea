@@ -239,16 +239,18 @@ function tickApproval() {
 
 // ---------- scanner ----------
 function renderScanner() {
+  if ($("scanner-note")) setText("scanner-note", S.scanner_note || "Sample rows (preview).");
   const verdictTxt = { no_trade: "No trade", shadow: "Shadow only", trade: "Trade" };
   const rows = S.scanner.filter(r => scannerCat === "all" || r.category === scannerCat);
   setHTML($("scanner"), rows.length ? rows.map(r => {
-    const isPred = r.market_pct != null || r.category === "esports";
-    const price = isPred ? `${r.price.toFixed(1)}¢` : money(Math.round(r.price * 100));
-    const model = r.model_pct == null ? "–" : `${r.model_pct.toFixed(1)}%`;
-    const spread = isPred ? `${r.spread}¢` : `$${r.spread.toFixed(2)}`;
+    const isPred = r.category === "kalshi" || r.category === "esports";
+    const dash = "–";
+    const price = r.price == null ? dash : isPred ? `${Number(r.price).toFixed(1)}¢` : money(Math.round(r.price * 100));
+    const model = r.model_pct == null ? dash : `${Number(r.model_pct).toFixed(1)}%`;
+    const spread = r.spread == null ? dash : isPred ? `${Number(r.spread).toFixed(1)}¢` : `$${Number(r.spread).toFixed(2)}`;
     return `<tr><td>${esc(r.market)}<span class="sub">${esc({ kalshi: "Kalshi", esports: "E-Sports", stocks: "Stock", etfs: "ETF" }[r.category])}</span></td>
       <td>${esc(r.side)}</td><td class="num">${price}</td><td class="num">${model}</td><td class="num">${spread}</td>
-      <td class="num">$${r.depth_usd.toLocaleString()}</td>
+      <td class="num">${r.depth_usd == null ? "–" : "$" + Number(r.depth_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
       <td><span class="verdict v-${r.verdict}">${verdictTxt[r.verdict]}</span></td><td class="why">${esc(r.reason)}</td></tr>`;
   }).join("") : `<tr><td colspan="8" class="muted">No markets in this category.</td></tr>`);
 }
