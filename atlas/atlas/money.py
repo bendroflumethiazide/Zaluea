@@ -120,6 +120,18 @@ def min_money(*xs: Money) -> Money:
 # ---------------------------------------------------------------------------
 # Kalshi fees
 # ---------------------------------------------------------------------------
+# Kalshi rounds the trade fee up to $0.000001 and then charges a "rounding fee" that brings the
+# balance back to a $0.0001 (direct) or $0.01 (non-direct) grid (docs: getting_started/fee_rounding).
+# For sub-cent prices the total can exceed the cent-rounded model fee by just under one cent, so
+# every reservation adds this allowance. Spending records only the fees actually charged.
+KALSHI_ROUNDING_ALLOWANCE = Money(10_000)          # $0.01
+
+
+def kalshi_worst_case_fee(contracts: int, price: Money, multiplier_pct: int = 100) -> Money:
+    """Upper bound of everything Kalshi can charge for one taker order."""
+    return kalshi_taker_fee(contracts, price, multiplier_pct) + KALSHI_ROUNDING_ALLOWANCE
+
+
 def kalshi_taker_fee(contracts: int, price: Money, multiplier_pct: int = 100) -> Money:
     """Kalshi 'quadratic' taker fee for ONE order, exactly as charged:
 

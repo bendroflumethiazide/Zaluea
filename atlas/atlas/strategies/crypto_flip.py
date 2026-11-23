@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 
 from ..analytics.probability import BP, expected_value
-from ..money import Money, kalshi_taker_fee
+from ..money import Money, kalshi_worst_case_fee
 from .base import MarketView, NoTrade, Signal, Strategy, StrategyConfig
 
 ONE = Money.dollars(1)
@@ -142,7 +142,7 @@ class CryptoFlipFavorite(Strategy):
         # ---- size and value (exact Money)
         qty, fee = 0, Money.ZERO
         while True:
-            f = kalshi_taker_fee(qty + 1, ask, v.fee_multiplier_pct)
+            f = kalshi_worst_case_fee(qty + 1, ask, v.fee_multiplier_pct)
             if ask * (qty + 1) + f + self.slip * (qty + 1) > v.max_order:
                 break
             qty, fee = qty + 1, f

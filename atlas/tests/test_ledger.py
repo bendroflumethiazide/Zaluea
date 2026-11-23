@@ -223,3 +223,15 @@ def test_simultaneous_processes_cannot_bypass_the_cap(tmp_path):
     # Kalshi ceiling is $10: at most 6 x $1.50 = $9.00 can ever be reserved.
     assert total_ok == 6 and spent == M("9.00")
     assert audit.verify().ok
+
+
+def test_kalshi_rounding_fee_never_exceeds_the_reservation(led):
+    """Kalshi docs (fee_rounding): trade fee rounded to $0.000001, then a rounding fee that can add
+    just under a cent. Reservations include a $0.01 allowance, so this is not an integrity error."""
+    from atlas.money import kalshi_worst_case_fee
+    price = M("0.975")                                              # a deci-cent price
+    cost = price * 2 + kalshi_worst_case_fee(2, price)
+    coid = led.reserve(req("K1", cost=cost.to_str(), qty=2, price="0.975"), ROOMY, DAY)
+    charged = kalshi_taker_fee(2, price) + M("0.0099")              # model fee + worst rounding
+    led.record_execution("f1", coid, "buy", 2, price, charged, DAY)
+    assert led.integrity_check()[0]

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from ..limits import MODULE_CATEGORY, Limits
 from ..ledger import Snapshot
-from ..money import Money, kalshi_taker_fee
+from ..money import Money, kalshi_worst_case_fee
 from ..proposal import Proposal
 
 RECONCILE_MAX_AGE_S = 30.0
@@ -40,9 +40,9 @@ def fee_multiplier_pct(fee_type: str | None, multiplier: str | None) -> int | No
 
 
 def worst_case_fee(module: str, qty: int, price: Money, multiplier_pct: int = 100) -> Money:
-    """Highest taker fee this order could incur."""
+    """Highest total fee this order could incur (model fee + Kalshi rounding allowance)."""
     if module in ("kalshi", "esports"):
-        return kalshi_taker_fee(qty, price, multiplier_pct)
+        return kalshi_worst_case_fee(qty, price, multiplier_pct)
     if module in ("stocks", "etfs"):
         return Money.ZERO            # Alpaca charges no commission on buys
     raise ValueError(f"Unknown module {module}")

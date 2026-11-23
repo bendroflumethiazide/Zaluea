@@ -51,10 +51,11 @@ def D(s) -> Decimal:
 
 
 def shadow_fee(module: str, qty: int, price: Decimal, multiplier: Decimal = ONE) -> Decimal:
-    """Independent fee formula: Kalshi 0.07 x C x P x (1-P) x multiplier, rounded UP to the cent."""
+    """Independent worst-case fee: Kalshi 0.07 x C x P x (1-P) x multiplier rounded UP to the
+    cent, plus one cent for Kalshi's balance-rounding fee (fee_rounding docs)."""
     if module in ("kalshi", "esports"):
         raw = Decimal("0.07") * qty * price * (ONE - price) * multiplier
-        return raw.quantize(CENT, rounding=ROUND_CEILING)
+        return raw.quantize(CENT, rounding=ROUND_CEILING) + CENT
     if module in ("stocks", "etfs"):
         return Decimal("0")
     raise ValueError(module)
