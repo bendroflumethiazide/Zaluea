@@ -53,7 +53,7 @@ class Http:
                 if e.code == 404:
                     return None
                 raise
-            except (urllib.error.URLError, TimeoutError):
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError):   # resets, timeouts, cut-off bodies
                 time.sleep(2 + i)
         raise RuntimeError(f"gave up: {url}")
 
