@@ -61,3 +61,17 @@ def test_demo_order_test_refuses_production(monkeypatch):
     k = KalshiExchange(DEMO, None, transport=sim, min_interval=0)
     assert cc.demo_order_test(k, args(kalshi_env="prod", demo_order_test=True)) is False
     assert fake.orders == {}
+
+
+def test_saved_config_supplies_ids_but_never_secrets(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"kalshi_key_id": "29cf-demo", "kalshi_key_file": "k.key",
+                               "private_key": "-----BEGIN PRIVATE KEY-----", "secret": "x"}), encoding="utf-8")
+    loaded = cc.load_config(cfg)
+    assert loaded == {"kalshi_key_id": "29cf-demo", "kalshi_key_file": "k.key"}
+
+
+def test_config_with_windows_bom_is_read(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_bytes(b"\xef\xbb\xbf" + json.dumps({"kalshi_env": "demo"}).encode())
+    assert cc.load_config(cfg) == {"kalshi_env": "demo"}

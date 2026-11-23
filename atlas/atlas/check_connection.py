@@ -13,6 +13,12 @@ Everything is READ-ONLY by default. Two optional, explicit extras:
   --apply-safe-settings  Alpaca: set long-only, no margin, no options on the
                          account. Asks you to type APPLY first.
 
+Settings can be saved once in %USERPROFILE%\.atlas\config.json (outside the
+repository) so you don't have to type them; command-line options override it:
+
+    {"kalshi_key_id": "...", "kalshi_key_file": "C:/Users/you/.atlas/keys/kalshi-demo.key",
+     "kalshi_env": "demo"}
+
 Secrets are never printed: key ids are shown as their last 4 characters.
 """
 from __future__ import annotations
@@ -30,6 +36,17 @@ from .exchange.kalshi import DEMO, PROD, KalshiExchange, load_signer
 from .marketdata.btc import BtcReference
 
 OK, BAD, INFO = "PASS", "FAIL", "INFO"
+CONFIG = Path.home() / ".atlas" / "config.json"
+CONFIG_KEYS = ("kalshi_key_id", "kalshi_key_file", "kalshi_env", "subaccount", "alpaca_key_id", "alpaca_secret_file")
+
+
+def load_config(path: Path = CONFIG) -> dict:
+    """Owner settings saved on this PC. Never contains private keys or secrets:
+    only key IDs and the PATHS to key files."""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    return {k: v for k, v in data.items() if k in CONFIG_KEYS}
 
 
 def line(tag: str, msg: str):
@@ -158,7 +175,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--kalshi-key-id")
     ap.add_argument("--kalshi-key-file")
-    ap.add_argument("--kalshi-env", choices=("demo", "prod"), default="demo")
+    ap.add_argument("--kalshi-env", choices=("demo", "prod"))
     ap.add_argument("--subaccount", type=int)
     ap.add_argument("--demo-order-test", action="store_true")
     ap.add_argument("--alpaca-key-id")
@@ -166,6 +183,13 @@ def main(argv=None) -> int:
     ap.add_argument("--alpaca-live", action="store_true")
     ap.add_argument("--apply-safe-settings", action="store_true")
     a = ap.parse_args(argv)
+    saved = load_config()
+    for k, v in saved.items():
+        if getattr(a, k, None) is None:
+            setattr(a, k, v)
+    a.kalshi_env = a.kalshi_env or "demo"
+    if saved:
+        line(INFO, f"Using saved settings from {CONFIG}")
 
     results = []
     r = BtcReference().get()
