@@ -66,8 +66,9 @@ def build(tmp_path) -> Stack:
     clock = lambda: t[0]
     paths = initialize(tmp_path / "data")
     ex = FakeExchange(clock=clock)
-    for i, ev in enumerate(["BTC-1245", "BTC-1300", "ETH-1245", "CS2-VIT-FAZE"]):
-        ex.add_market(["BTC-A", "BTC-B", "ETH-A", "CS2-A"][i], ev, module="esports" if ev.startswith("CS2") else "kalshi")
+    for i, ev in enumerate(["BTC-1245", "BTC-1300", "ETH-1245", "CS2-VIT-FAZE", "SOL-1245"]):
+        ex.add_market(["BTC-A", "BTC-B", "ETH-A", "CS2-A", "SOL-A"][i], ev,
+                      module="esports" if ev.startswith("CS2") else "kalshi")
     shadow = ShadowRiskManager(ex, paths.control, paths.locks, paths.shadow_journal,
                                paths.shadow_private_key.read_bytes(), clock=clock, health_db=paths.health)
     gw = Gateway(paths, ex, ClockGuard([ex.server_time], local=clock), shadow, clock=clock)

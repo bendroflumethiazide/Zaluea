@@ -251,6 +251,7 @@ class KalshiExchange:
                 "exchange_index": m.get("exchange_index", 0), "market_type": m.get("market_type"),
                 "fee_type": s.get("fee_type"), "fee_multiplier": str(s.get("fee_multiplier")),
                 "price_level_structure": m.get("price_level_structure"), "price_ranges": m.get("price_ranges"),
+                "rules_primary": m.get("rules_primary"),
             }
         return self._market_cache[market]
 

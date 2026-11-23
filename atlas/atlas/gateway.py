@@ -33,6 +33,7 @@ from .control import ControlStore, LockStore, order_fingerprint, trading_locked
 from .exchange.errors import AuthError, DataError, DuplicateOrder, ExchangeError, OrderRejected
 from .health import HealthBoard
 from .ledger import BudgetError, Ledger, LedgerIntegrityError, ReservationRequest
+from .marketdata.esports import identify
 from .limits import LimitStore
 from .money import Money, kalshi_taker_fee
 from .paths import DataPaths
@@ -222,6 +223,10 @@ class Gateway:
                                     f"multiplier; the market uses {pct}%"], fp)
             if info.get("module") != prop.module:
                 return self._reject(prop, "8 market data", [f"Market is {info.get('module')}, not {prop.module}"], fp)
+            if prop.module == "esports" and self.control.module_enabled("esports"):
+                ok_e, why_e = identify(prop.market, info.get("rules_primary") or "").tradable
+                if not ok_e:
+                    return self._reject(prop, "8 market data", [why_e], fp)
 
         # 3 budget state
         day = self.verified_day()

@@ -45,6 +45,13 @@ def test_no_authorization_blocks_entries(st):
     assert ex_orders(st) == []
 
 
+def test_esports_needs_a_valid_identity_and_live_feed(st):
+    st.ready(modules=("esports",))
+    r = st.buy(st.proposal(market="CS2-A", module="esports", qty=1))
+    assert r.status == "rejected" and ("identity" in r.reasons[0] or "live game-state" in r.reasons[0])
+    assert ex_orders(st) == []
+
+
 def test_disabled_module_cannot_trade(st):
     st.ready(modules=("kalshi",))
     r = st.buy(st.proposal(market="CS2-A", module="esports", limit="0.88"))
@@ -103,8 +110,7 @@ def test_market_and_concurrent_position_limits(st):
     st.ready()
     for m in ("BTC-A", "BTC-B", "ETH-A"):
         assert st.buy(st.proposal(market=m, qty=1, limit="0.88")).status == "filled"
-    st.gw.control.set_module("esports", True)
-    r = st.buy(st.proposal(market="CS2-A", module="esports", qty=1, limit="0.88"))
+    r = st.buy(st.proposal(market="SOL-A", qty=1, limit="0.88"))           # a 4th market
     assert r.status == "rejected" and any("positions" in x for x in r.reasons)
     r = st.buy(st.proposal(market="BTC-A", qty=2, limit="0.88"))  # $0.89 held + $1.78 = $2.67 <= $3 -> ok
     assert r.status == "filled"
