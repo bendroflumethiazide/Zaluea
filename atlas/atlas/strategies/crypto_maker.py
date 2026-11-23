@@ -69,6 +69,38 @@ class CryptoMaker(Strategy):
         self.momentum_drop = Money.parse(c.momentum_drop)
         self.k, self.jump_sigmas = float(c.vol_scale), float(c.jump_sigmas)
 
+    def _model(self, v: MarketView):
+        """(z_yes, jump_move, jump_limit) or a reason string."""
+        c = self.config
+        if v.strike is None:
+            return "Market has no strike price"
+        ref = v.reference.at(v.now)
+        if ref is None or v.now - ref[0] > c.max_ref_age_s:
+            return "BTC reference price is missing or stale"
+        s_ref = ref[1]
+        sv = sigma_per_minute(v.reference.window(v.now - c.vol_lookback_s, v.now))
+        if sv is None or sv[1] < c.min_returns or sv[0] <= 0:
+            return "Not enough recent BTC prices to measure volatility"
+        sigma = sv[0]
+        t_eff = max((v.close_ts - v.now) / 60.0 - 2.0 / 3.0, 1.0 / 3.0)
+        z_yes = math.log(s_ref.units / v.strike.units) / (self.k * sigma * math.sqrt(t_eff))
+        earlier = v.reference.at(v.now - c.jump_window_s)
+        jump_move = s_ref.units - earlier[1].units if earlier else None
+        return z_yes, jump_move, self.jump_sigmas * sigma * math.sqrt(c.jump_window_s / 60.0) * s_ref.units
+
+    def keep(self, v: MarketView, side: str, price: Money) -> str | None:
+        """Should a bid ALREADY RESTING at `price` stay? None = keep; otherwise the reason to cancel.
+        Value-based, not tick-chasing: the bid stays while the model still values it above its own price
+        after fees and no flip guard fires. (Cancelling on every one-cent wiggle would mean the order
+        almost never fills, so the test would never collect evidence.)"""
+        if (v.now - v.open_ts) / 60.0 >= self.config.cancel_min:
+            return f"minute {self.config.cancel_min} reached"
+        m = self._model(v)
+        if isinstance(m, str):
+            return m
+        r = self._side(v, side, *m, price=price)
+        return r if isinstance(r, str) else None
+
     def evaluate(self, v: MarketView) -> Signal | NoTrade:
         c = self.config
         no = lambda reasons, **d: NoTrade(self.name, v.market, reasons, d)
@@ -76,23 +108,10 @@ class CryptoMaker(Strategy):
         if not c.entry_start_min <= minute < c.entry_end_min:
             return no([f"Minute {minute:.1f}: resting orders are placed only in minutes "
                        f"{c.entry_start_min}-{c.entry_end_min}"])
-        if v.strike is None:
-            return no(["Market has no strike price"])
-        ref = v.reference.at(v.now)
-        if ref is None or v.now - ref[0] > c.max_ref_age_s:
-            return no(["BTC reference price is missing or stale"])
-        s_ref = ref[1]
-        sv = sigma_per_minute(v.reference.window(v.now - c.vol_lookback_s, v.now))
-        if sv is None or sv[1] < c.min_returns or sv[0] <= 0:
-            return no(["Not enough recent BTC prices to measure volatility"])
-        sigma = sv[0]
-        t_eff = max((v.close_ts - v.now) / 60.0 - 2.0 / 3.0, 1.0 / 3.0)
-        z_yes = math.log(s_ref.units / v.strike.units) / (self.k * sigma * math.sqrt(t_eff))
-        jump_move = None
-        earlier = v.reference.at(v.now - c.jump_window_s)
-        if earlier:
-            jump_move = s_ref.units - earlier[1].units
-        jump_limit = self.jump_sigmas * sigma * math.sqrt(c.jump_window_s / 60.0) * s_ref.units
+        m = self._model(v)
+        if isinstance(m, str):
+            return no([m])
+        z_yes, jump_move, jump_limit = m
 
         best, why = None, []
         for side in ("yes", "no"):
@@ -103,15 +122,17 @@ class CryptoMaker(Strategy):
                 best = r
         return best if best is not None else no(why, z_yes=z_yes)
 
-    def _side(self, v: MarketView, side: str, z_yes: float, jump_move, jump_limit) -> Signal | str:
+    def _side(self, v: MarketView, side: str, z_yes: float, jump_move, jump_limit,
+              price: Money | None = None) -> Signal | str:
         c = self.config
         q = v.quotes[side].at(v.now)
         if not q or q[1][0] is None or q[1][1] is None:
             return "no two-sided quote"
         bid, ask = q[1][0], q[1][1]
-        price = bid + CENT if ask - bid >= self.improve else bid
-        if price >= ask:
-            return f"price {price} would cross the ask {ask}"
+        if price is None:                              # a new order: choose the price, never cross
+            price = bid + CENT if ask - bid >= self.improve else bid
+            if price >= ask:
+                return f"price {price} would cross the ask {ask}"
         if not self.min_price <= price <= self.max_price:
             return f"price {price} is outside {self.min_price}-{self.max_price}"
         z = z_yes if side == "yes" else -z_yes

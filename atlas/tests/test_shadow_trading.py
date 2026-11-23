@@ -412,3 +412,16 @@ def test_dashboard_shows_simulated_results_labelled_and_survives_a_bad_file(tmp_
     (tmp_path / "data" / "sim" / "shadow.json").write_text('{"simulated": true, "accounts": [{}]}')
     with pytest.raises(KeyError):
         rs._shadow(now[0])                                               # overlay() catches this
+
+
+def test_resting_bid_is_kept_while_it_still_has_value_not_cancelled_on_a_one_cent_wiggle():
+    s = CryptoMaker()
+    v = maker_view(yes=("0.69", "0.74"))                    # best bid slipped a cent below our 0.71
+    assert s.keep(v, "yes", M("0.71")) is None
+
+
+def test_resting_bid_is_cancelled_when_value_is_gone_or_time_is_up():
+    s = CryptoMaker()
+    gone = s.keep(maker_view(ref_price="60005"), "yes", M("0.71"))    # BTC drifted to the strike
+    assert gone and ("below" in gone or "disagrees" in gone)
+    assert "minute 14" in s.keep(maker_view(now_min=14.2), "yes", M("0.71"))

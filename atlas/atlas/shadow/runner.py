@@ -205,8 +205,14 @@ class ShadowRunner:
                 if resting:
                     if acct.kind == "maker":
                         for o in resting:
-                            if not isinstance(r, Signal) or r.side != o.side or r.limit_price < o.limit:
+                            if o.cancel_at is not None:
+                                continue
+                            why = s.keep(v, o.side, o.limit) if hasattr(s, "keep") else \
+                                (None if isinstance(r, Signal) and r.side == o.side else "strategy withdrew")
+                            if why:
                                 acct.cancel(o.coid, now)
+                                self.journal.add(ts=now, day=day, account=acct.name, strategy=s.name, market=m,
+                                                 side=o.side, kind="note", coid=o.coid, detail=f"Cancel: {why}")
                     continue
                 if not isinstance(r, Signal) or m in acct.held_markets(day):
                     continue
