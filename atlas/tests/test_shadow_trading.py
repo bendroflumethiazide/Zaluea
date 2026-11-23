@@ -394,3 +394,21 @@ def test_shadow_trading_cannot_reach_live_execution():
                 mod = (n.module or "")
                 assert not any(mod.endswith(x) for x in forbidden_imports), f"{f.name} imports {mod}"
 
+
+
+# ----------------------------------------------------------------------------- dashboard
+def test_dashboard_shows_simulated_results_labelled_and_survives_a_bad_file(tmp_path):
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dashboard"))
+    from real_state import RealState
+    r, k, strat, now = make_runner(tmp_path)
+    r.tick()
+    rs = RealState(tmp_path / "data")
+    sh = rs._shadow(now[0] + 5)
+    assert sh["real"] and sh["running"] and "SIMULATED" in sh["label"]
+    assert sh["account"] == "stub_maker/as_live" and len(sh["accounts"]) == 2
+    assert sh["accounts"][0]["orders"] == 1 and sh["accounts"][0]["open"] == 1
+    assert not rs._shadow(now[0] + 600)["running"]                       # stale file is flagged
+    (tmp_path / "data" / "sim" / "shadow.json").write_text('{"simulated": true, "accounts": [{}]}')
+    with pytest.raises(KeyError):
+        rs._shadow(now[0])                                               # overlay() catches this

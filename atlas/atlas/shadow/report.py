@@ -34,8 +34,8 @@ def _ledger_totals(path: Path) -> dict:
             basis[k] = basis.get(k, 0) - removed
             held[k] = q - r["qty"]
             closed.append(r["qty"] * r["price"] - r["fee"] - removed)
-    open_cost = sum(v for k, v in basis.items() if held.get(k, 0) > 0)
-    return {"fees": fees, "closed": closed, "open_cost": open_cost}
+    open_pos = [{"market": k[0], "side": k[1], "qty": held[k], "basis": basis[k]} for k in held if held[k] > 0]
+    return {"fees": fees, "closed": closed, "open_cost": sum(p["basis"] for p in open_pos), "positions": open_pos}
 
 
 def account_summary(folder: Path, name: str, kind: str, journal) -> dict:
@@ -64,6 +64,8 @@ def account_summary(folder: Path, name: str, kind: str, journal) -> dict:
         "missed_hypothetical_pnl": str(Money(sum(r["hypo_pnl"] for r in missed_done))),
         "rejected": len(rejected), "rejected_reasons": reasons.most_common(3),
         "open_orders": 0,
+        "positions": t["positions"],
+        "curve_c": [sum(t["closed"][:i + 1]) // 10_000 for i in range(len(t["closed"]))],   # display only
     }
     if kind == "maker":   # the maker fee is an assumption: show the result if makers pay nothing
         out["pnl_if_no_maker_fee"] = str(Money(pnl + t["fees"]))
@@ -117,9 +119,10 @@ def report_markdown(data_dir: str | Path) -> str:
         name = f"{folder.parent.name}/{folder.name}"
         kind = "maker" if folder.parent.name == "crypto_maker" else "taker"
         a = account_summary(folder, name, kind, journal)
-        lines.append(f"| {name} | {a['submitted']} | {a['orders_filled']} | {a['fill_rate_pct']}% | {a['settled']} | "
-                     f"{a['win_rate_pct']}% | {a['pnl_total']} | {a['fees_paid']} | {a['missed']} "
-                     f"({a['missed_resolved']}) | {a['missed_win_rate_pct']}% | {a['missed_hypothetical_pnl']} | "
+        pct = lambda v: "–" if v is None else f"{v}%"
+        lines.append(f"| {name} | {a['submitted']} | {a['orders_filled']} | {pct(a['fill_rate_pct'])} | {a['settled']} | "
+                     f"{pct(a['win_rate_pct'])} | {a['pnl_total']} | {a['fees_paid']} | {a['missed']} "
+                     f"({a['missed_resolved']}) | {pct(a['missed_win_rate_pct'])} | {a['missed_hypothetical_pnl']} | "
                      f"{a['rejected']} |")
         if kind == "maker":
             makers.append(a)

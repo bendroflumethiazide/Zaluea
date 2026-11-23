@@ -9,10 +9,10 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 |---|---|
 | 1. Audit and plan | ✅ Done: [`docs/01-audit.md`](docs/01-audit.md), [`docs/02-plan.md`](docs/02-plan.md) |
 | 2. Safety foundation | ✅ Done, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
-| Dashboard | ✅ Built; shows real safety data read-only with `--data`; market panels still sample |
+| Dashboard | ✅ Built; shows real safety data, the live scanner and shadow trading read-only with `--data`; correlation panel still sample |
 | 3. Market data | ✅ Done: real Kalshi + Alpaca clients, BTC reference, esports identity; see [`docs/05-phase3-report.md`](docs/05-phase3-report.md) |
 | 4. Analytics | ◐ Built and tested ([report](docs/07-phase4-report.md)); final 4-month backtest running |
-| 5. Shadow trading | Next |
+| 5. Shadow trading | ◐ Built and tested ([report](docs/08-phase5-report.md)); collecting live evidence |
 | 6–10 | Not started |
 
 **Live scanner (no keys, cannot trade):**
@@ -20,11 +20,15 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 `python -m atlas.scanner --data "$env:USERPROFILE\.atlas\data"` and, in a second window,
 `python dashboard\server.py --data "$env:USERPROFILE\.atlas\data"`.
 
+**Shadow trading (simulated money, no keys, cannot trade):** in another window run
+`python -m atlas.shadow --data "$env:USERPROFILE\.atlas\data"`. Leave it running; results appear in the
+dashboard's Shadow trading panel, and `python -m atlas.shadow --data ... --report` prints them.
+
 **Connect your practice accounts:** follow [`docs/04-connecting.md`](docs/04-connecting.md), then run
 `python -m atlas.check_connection` (read-only unless you add `--demo-order-test`).
 
-No part of ATLAS can place a real order yet: the only exchange it knows is a fake one used for testing.
-Live trading will only ever be enabled by you.
+ATLAS has never placed a real-money order. The only order it has ever sent was the one-contract
+connection test on Kalshi's DEMO exchange. Live trading will only ever be enabled by you.
 
 ## Run the tests
 

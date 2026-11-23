@@ -371,3 +371,12 @@ dialog input[aria-invalid="true"] { border-color: var(--bad); }
   .switch[aria-checked="true"] { background: Highlight; }
   .brand-name { color: CanvasText; background: none; }
 }
+
+/* ---------- simulated accounts ---------- */
+.sim-accts > li { padding: .7rem 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+.sim-title { margin: 0 0 .35rem; }
+.sim-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem; margin: 0; }
+.sim-stats dt { font-size: .75rem; color: var(--muted); }
+.sim-stats dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sim-accts .small { margin: .35rem 0 0; }
+@media (max-width: 420px) { .sim-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

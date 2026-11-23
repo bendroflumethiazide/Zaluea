@@ -19,6 +19,7 @@ from atlas.audit import AuditLog                     # noqa: E402
 from atlas.clock import accounting_day               # noqa: E402
 from atlas.control import LOCK_KINDS, ControlStore, LockStore  # noqa: E402
 from atlas.health import HealthBoard                 # noqa: E402
+from atlas.money import Money                        # noqa: E402
 from atlas.ledger import Ledger                      # noqa: E402
 from atlas.limits import LimitStore                  # noqa: E402
 from atlas.paths import DataPaths                    # noqa: E402
@@ -132,6 +133,51 @@ class RealState:
                                     f"{sd['model']['scorecard']}")
         else:
             snap["scanner_note"] = "Scanner not running (start: python -m atlas.scanner --data <folder>); sample rows shown"
+        try:
+            snap["shadow"] = self._shadow(now) or snap["shadow"]
+        except (KeyError, TypeError, ValueError):     # an older or damaged shadow.json: show the sample
+            snap["shadow"]["vs_live"] = "shadow.json could not be read; sample shown"
         snap["audit_head"] = v.head_hash[:16]
         return snap
+
+    def _shadow(self, now: float) -> dict | None:
+        """Shadow-trading results from sim/shadow.json (written by python -m atlas.shadow)."""
+        path = self.p.root / "sim" / "shadow.json"
+        try:
+            sd = json.loads(path.read_text()) if path.exists() else None
+        except (OSError, ValueError):
+            return None
+        if not sd or not sd.get("simulated"):
+            return None
+        c = lambda m: int(Money.parse(m).units // 10_000)        # display only
+        accts = sd["accounts"]
+        main = next((a for a in accts if a["account"].endswith("/as_live") and a["order_type"] == "maker"),
+                    accts[0] if accts else None)
+        if main is None:
+            return None
+        curve = [0] + main.get("curve_c", [])
+        peak, dd = 0, 0
+        for x in curve:
+            peak, dd = max(peak, x), max(dd, peak - x)
+        age = int(now - sd["ts"])
+        real = sd.get("real") or {}
+        return {
+            "real": True, "label": sd["label"], "account": main["account"],
+            "running": age < 60, "age_s": age,
+            "pnl_c": c(main["pnl_total"]), "curve_c": curve, "trades": main["settled"], "wins": main["wins"],
+            "losses": main["settled"] - main["wins"], "fees_c": c(main["fees_paid"]), "max_dd_c": dd,
+            "fill_rate": main["fill_rate_pct"], "missed_win_rate": main["missed_win_rate_pct"],
+            "win_rate": main["win_rate_pct"],
+            "positions": [{"market": x["market"], "side": x["side"].upper(), "qty": x["qty"],
+                           "entry_c": x["basis"] // 10_000 // max(x["qty"], 1), "mark_c": None}
+                          for x in main.get("positions", [])],
+            "accounts": [{"name": a["account"], "type": a["order_type"], "orders": a["submitted"],
+                          "fill_rate": a["fill_rate_pct"], "settled": a["settled"], "win_rate": a["win_rate_pct"],
+                          "pnl": a["pnl_total"], "pnl_no_maker_fee": a.get("pnl_if_no_maker_fee"),
+                          "missed": a["missed_resolved"], "missed_win_rate": a["missed_win_rate_pct"],
+                          "rejected": a["rejected"], "open": a["open_orders"]} for a in accts],
+            "assumptions": sd.get("assumptions", {}),
+            "vs_live": f"real account {real.get('pnl_total', '$0.00')} realized, kept separate. "
+                       + real.get("note", ""),
+        }
 

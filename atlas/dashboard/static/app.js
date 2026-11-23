@@ -272,20 +272,46 @@ function renderCorrelation() {
 // ---------- shadow ----------
 function renderShadow() {
   const s = S.shadow;
-  setText("shadow-balance", money(s.balance_c));
   const pnlEl = $("shadow-sub");
-  pnlEl.innerHTML = `Simulated P&L <strong class="${s.pnl_c >= 0 ? "pos" : "neg"}">${money(s.pnl_c, { sign: true })}</strong> from a ${money(s.start_c)} simulated start. Not real money.`;
-  const pts = s.curve_c, lo = Math.min(...pts), hi = Math.max(...pts), span = Math.max(1, hi - lo);
+  if (s.real) {
+    setText("shadow-balance", money(s.pnl_c, { sign: true }));
+    const state = s.running ? `updated ${s.age_s} s ago` : `NOT RUNNING (last update ${Math.round(s.age_s / 60)} min ago; start: python -m atlas.shadow --data &lt;folder&gt;)`;
+    pnlEl.innerHTML = `Simulated P&L of <strong>${esc(s.account)}</strong>, ${state}. Live public data, simulated money; resting orders fill only when real trades sell through them.`;
+  } else {
+    setText("shadow-balance", money(s.balance_c));
+    pnlEl.innerHTML = `Simulated P&L <strong class="${s.pnl_c >= 0 ? "pos" : "neg"}">${money(s.pnl_c, { sign: true })}</strong> from a ${money(s.start_c)} simulated start. Not real money.`;
+  }
+  const pts = s.curve_c.length > 1 ? s.curve_c : [s.curve_c[0] || 0, s.curve_c[0] || 0];
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = Math.max(1, hi - lo);
   const xy = pts.map((v, i) => [(i / (pts.length - 1)) * 300, 72 - ((v - lo) / span) * 64]);
   const d = xy.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   setHTML($("spark"), `<defs><linearGradient id="sg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5fd4ff" stop-opacity=".35"/><stop offset="1" stop-color="#5fd4ff" stop-opacity="0"/></linearGradient></defs>
     <path d="${d} L300 80 L0 80 Z" fill="url(#sg)"/><path d="${d}" fill="none" stroke="#5fd4ff" stroke-width="2.2" vector-effect="non-scaling-stroke"/>`);
-  setText("spark-cap", `Simulated balance over the last ${pts.length} trades: low ${money(lo)}, high ${money(hi)}, now ${money(s.balance_c)}.`);
+  setText("spark-cap", s.real
+    ? `Cumulative simulated P&L over ${s.trades} settled trades: low ${money(lo)}, high ${money(hi)}.`
+    : `Simulated balance over the last ${pts.length} trades: low ${money(lo)}, high ${money(hi)}, now ${money(s.balance_c)}.`);
+  const pct = (v) => v === null || v === undefined ? "–" : `${v}%`;
+  $("shadow-accounts").hidden = $("shadow-accounts-heading").hidden = !s.accounts;
+  if (s.accounts) setHTML($("shadow-accounts"), s.accounts.map(a => {
+    const strat = a.name.split("/")[0].replace("crypto_", "").replace(/_/g, " ");
+    const title = a.type === "maker" ? "Resting bids" : "Buy at the ask";
+    const prof = a.name.endsWith("/as_live") ? "real limits" : "research, no daily stops";
+    const notes = [a.open ? `${a.open} order resting now` : "",
+      a.missed ? `unfilled orders would have won ${pct(a.missed_win_rate)} of ${a.missed}` : "",
+      a.pnl_no_maker_fee ? `${esc(a.pnl_no_maker_fee)} if makers pay no fee` : "",
+      a.rejected ? `${a.rejected} refused by limits` : ""].filter(Boolean).join(" · ");
+    return `<li><p class="sim-title"><strong>${title}</strong> <span class="muted small">${esc(strat)} · ${prof}</span></p>
+      <dl class="sim-stats"><div><dt>Orders</dt><dd>${a.orders}</dd></div><div><dt>Filled</dt><dd>${pct(a.fill_rate)}</dd></div>
+      <div><dt>Settled</dt><dd>${a.settled}</dd></div><div><dt>Won</dt><dd>${pct(a.win_rate)}</dd></div>
+      <div><dt>P&amp;L</dt><dd>${esc(a.pnl)}</dd></div></dl>${notes ? `<p class="muted small">${notes}</p>` : ""}</li>`;
+  }).join(""));
   setHTML($("shadow-kpis"), [["Trades", s.trades], ["Won", s.wins], ["Lost", s.losses],
-    ["Win rate", `${Math.round(100 * s.wins / Math.max(1, s.trades))}%`], ["Sim. fees", money(s.fees_c)], ["Max drawdown", money(s.max_dd_c)]]
+    ["Win rate", s.trades ? `${Math.round(100 * s.wins / s.trades)}%` : "–"], ["Sim. fees", money(s.fees_c)], ["Max drawdown", money(s.max_dd_c)]]
     .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join(""));
   setHTML($("shadow-pos"), s.positions.length ? s.positions.map(p =>
-    `<li>${p.qty} × ${esc(p.side)} · ${esc(p.market)} · entry ${p.entry_c}¢, now ${p.mark_c}¢ <span class="${p.mark_c >= p.entry_c ? "pos" : "neg"}">(${money((p.mark_c - p.entry_c) * p.qty, { sign: true })} sim.)</span></li>`).join("")
+    p.mark_c === null || p.mark_c === undefined
+      ? `<li>${p.qty} × ${esc(p.side)} · ${esc(p.market)} · cost ${p.entry_c}¢ each, held to settlement (sim.)</li>`
+      : `<li>${p.qty} × ${esc(p.side)} · ${esc(p.market)} · entry ${p.entry_c}¢, now ${p.mark_c}¢ <span class="${p.mark_c >= p.entry_c ? "pos" : "neg"}">(${money((p.mark_c - p.entry_c) * p.qty, { sign: true })} sim.)</span></li>`).join("")
     : `<li class="muted">No simulated positions.</li>`);
   setText("shadow-vs", `Shadow vs live: ${s.vs_live}`);
 }
@@ -416,7 +442,7 @@ async function refresh() {
     $("preview-note").innerHTML = S.real_error
       ? `<strong>Problem:</strong> ${esc(S.real_error)}`
       : partial
-        ? "<strong>Read-only view of your ATLAS data.</strong> Budget, limits, system health, authorization status, positions and activity are real. The market scanner, correlation and shadow trading panels are still sample data. Controls are read-only until the dashboard connects to the execution gateway (Phase 7)."
+        ? "<strong>Read-only view of your ATLAS data.</strong> Budget, limits, system health, authorization status, positions and activity are real. The market scanner and shadow trading panels show live data when their programs are running; the correlation panel is still sample data. Controls are read-only until the dashboard connects to the execution gateway (Phase 7)."
         : "<strong>Preview.</strong> Everything below is sample data. This dashboard is not connected to Kalshi or Alpaca and cannot place orders.";
     renderTop(); renderAccount(); renderBudget(); renderLimits(); renderHealth(); renderControls();
     renderApproval(); renderScanner(); renderCorrelation(); renderShadow(); renderPositions();
