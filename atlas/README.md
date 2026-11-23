@@ -24,7 +24,7 @@ python -m pip install -r requirements.txt
 python -m pytest tests
 ```
 
-## Run the dashboard preview (Windows)
+## Run the Hysilens dashboard (Windows)
 
 Open PowerShell and run:
 
@@ -38,7 +38,7 @@ python server.py
 Then open **http://127.0.0.1:8770** in your browser. To show real safety data from an ATLAS data folder
 (read-only), start it with `python server.py --data path\to\data`.
 
-The page:
+The dashboard is called **Hysilens**; ATLAS is the trading engine behind it. The page:
 - shows your feed artwork at the top left, with a live activity feed under it
 - has panels for the account, today's budget, safety limits, system health, trading controls, approvals, the market scanner, correlation, shadow trading, positions, activity history and the daily summary.
 

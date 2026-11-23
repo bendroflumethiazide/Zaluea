@@ -1,4 +1,4 @@
-"""ATLAS dashboard (preview).
+"""Hysilens: the dashboard for the ATLAS trading engine.
 
     python server.py        then open http://127.0.0.1:8770
 
@@ -26,7 +26,7 @@ CSP = ("default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self';
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ATLAS"
+    server_version = "Hysilens"
 
     def log_message(self, *args):
         pass
@@ -100,7 +100,7 @@ def main():
     threading.Thread(target=ticker, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     mode = f"safety data from {a.data} (read-only)" if a.data else "preview, sample data"
-    print(f"ATLAS dashboard ({mode}): http://127.0.0.1:{a.port}  (Ctrl+C to stop)")
+    print(f"Hysilens dashboard ({mode}): http://127.0.0.1:{a.port}  (Ctrl+C to stop)")
     srv.serve_forever()
 
 

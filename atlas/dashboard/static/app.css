@@ -79,7 +79,7 @@ main:focus { outline: none; }
 .brand { display: flex; align-items: center; gap: .55rem; margin-right: auto; }
 .brand-mark { width: 1.75rem; height: 1.75rem; color: var(--aqua); }
 .brand-name {
-  margin: 0; font-weight: 800; font-size: 1.3rem; letter-spacing: .22em;
+  margin: 0; font-weight: 800; font-size: 1.35rem; letter-spacing: .06em;
   background: linear-gradient(90deg, var(--aqua), var(--violet));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
