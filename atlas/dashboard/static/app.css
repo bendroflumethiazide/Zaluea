@@ -380,3 +380,12 @@ dialog input[aria-invalid="true"] { border-color: var(--bad); }
 .sim-stats dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sim-accts .small { margin: .35rem 0 0; }
 @media (max-width: 420px) { .sim-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---------- evidence (decision rules) ---------- */
+.ev-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .5rem; }
+.ev-rules { display: grid; gap: .45rem; margin: 0 0 .5rem; }
+.ev-rules li { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: .35rem; font-size: .9rem; }
+.ev-mark { font-weight: 700; line-height: 1.4; }
+.ev-pass .ev-mark { color: var(--good); }
+.ev-open .ev-mark { color: var(--muted); }
+.ev-rules progress { display: block; width: 100%; height: .45rem; margin-top: .3rem; accent-color: var(--aqua); }

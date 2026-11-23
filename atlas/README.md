@@ -15,14 +15,25 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | 5. Shadow trading | ◐ Built and tested ([report](docs/08-phase5-report.md)); collecting live evidence |
 | 6–10 | Not started |
 
-**Live scanner (no keys, cannot trade):**
-`python -m atlas.init_data --data "$env:USERPROFILE\.atlas\data"` once, then
-`python -m atlas.scanner --data "$env:USERPROFILE\.atlas\data"` and, in a second window,
-`python dashboard\server.py --data "$env:USERPROFILE\.atlas\data"`.
+**Run everything with one click (no keys, cannot trade):** double-click `windows\Start-ATLAS.cmd`.
+It starts the market scanner, the shadow-trading test and the Hysilens dashboard, and opens the dashboard.
+Leave the window open (minimizing it is fine). The supervisor behind it:
+- restarts any process that crashes or freezes;
+- keeps logs in `%USERPROFILE%\.atlas\data\logs`;
+- shows Windows notifications for problems, plus a shadow-test summary every day at 21:00.
 
-**Shadow trading (simulated money, no keys, cannot trade):** in another window run
-`python -m atlas.shadow --data "$env:USERPROFILE\.atlas\data"`. Leave it running; results appear in the
-dashboard's Shadow trading panel, and `python -m atlas.shadow --data ... --report` prints them.
+To start it automatically when you log in, run once
+`powershell -ExecutionPolicy Bypass -File windows\Install-Autostart.ps1`; `Uninstall-Autostart.ps1` undoes it.
+`python -m atlas.shadow --data "$env:USERPROFILE\.atlas\data" --report` prints the shadow results and the
+progress on the decision rules.
+
+<details><summary>Running the pieces by hand instead</summary>
+
+`python -m atlas.init_data --data "$env:USERPROFILE\.atlas\data"` once, then, each in its own window:
+`python -m atlas.scanner --data ...`, `python -m atlas.shadow --data ...` and
+`python dashboard\server.py --data ...`. Or all three under the supervisor:
+`python -m atlas.supervisor --data "$env:USERPROFILE\.atlas\data" --open`.
+</details>
 
 **Connect your practice accounts:** follow [`docs/04-connecting.md`](docs/04-connecting.md), then run
 `python -m atlas.check_connection` (read-only unless you add `--demo-order-test`).
@@ -70,9 +81,11 @@ Every panel uses sample data, and the controls only change that sample data.
 ```
 atlas/
   atlas/        the platform: money, clock, storage, audit, limits, control, ledger,
-                risk/ (primary), shadowrisk/ (independent), gateway, watchdog,
+                risk/ (primary), shadowrisk/ (independent), gateway, watchdog, supervisor, notify,
+                shadow/ (simulator, accounts, journal, evidence),
                 exchange/ (fake, kalshi, alpaca), marketdata/ (btc, esports), check_connection
-  tests/        163 automated tests (Part 25 acceptance tests, clients, simulators)
+  windows/      Start-ATLAS.cmd and the start-at-login scripts
+  tests/        254 automated tests (Part 25 acceptance tests, clients, simulators)
   docs/         audit, plan, phase reports
   dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```

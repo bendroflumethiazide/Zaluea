@@ -39,10 +39,15 @@ class HealthBoard:
                 for r in self.con.execute("SELECT * FROM heartbeats")}
 
     def notify(self, level: str, title: str, body: str) -> None:
-        """Durable outbox. Delivery (Windows notifications) is added with the dashboard phase."""
+        """Durable outbox. The supervisor (python -m atlas.supervisor) delivers it as Windows notifications."""
         with immediate(self.con):
             self.con.execute("INSERT INTO notifications (ts, level, title, body) VALUES (?,?,?,?)",
                              (self.clock(), level, title, body))
 
     def pending_notifications(self) -> list[dict]:
         return [dict(r) for r in self.con.execute("SELECT * FROM notifications WHERE delivered_ts IS NULL ORDER BY id")]
+
+    def mark_delivered(self, note_id: int) -> None:
+        with immediate(self.con):
+            self.con.execute("UPDATE notifications SET delivered_ts=? WHERE id=? AND delivered_ts IS NULL",
+                             (self.clock(), note_id))

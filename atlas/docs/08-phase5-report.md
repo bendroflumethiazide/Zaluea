@@ -1,6 +1,6 @@
 # Phase 5 report: shadow trading
 
-**Status:** built and tested (34 new tests; the full suite of 238 passes). It now needs to run for weeks to
+**Status:** built and tested (the full suite of 254 tests passes), with a supervisor to keep it running. It now needs to run for weeks to
 collect live evidence. No real order was placed, and none can be: shadow trading has no key, no gateway and no
 order code.
 
@@ -137,13 +137,36 @@ per-purchase limit, with approval required for every trade.
 - **The maker fee is an assumption.** Both results are reported: with the assumed fee and with no fee.
 - **Only BTC 15-minute markets are simulated.** Esports markets stay blocked until a live match-data feed exists (Phase 3 rule). Stocks and ETFs remain blocked until Phase 6.
 
-## How to run it on your PC
+## How to run it on your PC for weeks
 
-```powershell
-cd path\to\Zaluea\atlas
-python -m atlas.shadow --data "$env:USERPROFILE\.atlas\data"
-```
+Double-click `windows\Start-ATLAS.cmd`. It creates the data folder if needed, then starts a **supervisor**
+(`python -m atlas.supervisor`) that runs the shadow test, the market scanner and the dashboard together. It
+needs no keys and never starts the execution gateway. To have it start by itself at every login, run once:
+`powershell -ExecutionPolicy Bypass -File windows\Install-Autostart.ps1` (removed by `Uninstall-Autostart.ps1`).
 
-Leave it running alongside the scanner and the dashboard. It needs no keys. Results appear in the Shadow
-trading panel, and `python -m atlas.shadow --data "$env:USERPROFILE\.atlas\data" --report` prints the table.
-Stopping it is safe. Any simulated orders that were open are simply cancelled on the next start.
+**The supervisor:**
+- **Restarts** a process that exits: after 2 s, then 4, 8 … up to 5 minutes between attempts, and back to 2 s once a process has run for 10 minutes.
+- **Restarts a frozen process:** the shadow test or scanner if it has not written results for 3 minutes.
+- **Logs** each process to `<data>\logs\<name>.log`: 5 MB per file, 3 old files kept.
+- **Notifies you in Windows:**
+  - a crash or freeze, at most once per 30 minutes per process;
+  - anything the watchdog queued;
+  - a **daily summary** at 21:00 local time (`--summary-at` changes it), showing settled fills out of 200, simulated P&L and the verdict.
+- **Shows its status** at the bottom of the Shadow trading panel. Only one supervisor can run per data folder.
+
+The notification text is passed to Windows through environment variables, never pasted into a command, so a
+market name or error message cannot run commands. On anything other than Windows, notifications are printed
+to the log instead. **Not yet verified on Windows itself:** this cloud environment is Linux. The supervisor,
+restarts, logging, single-instance lock and daily summary are tested here; the toast and the two `.ps1`
+scripts are standard Windows PowerShell and need their first real run on your PC.
+
+**Progress on the decision rules** is computed from the simulated ledgers on every update (`atlas/shadow/evidence.py`).
+It is shown in the dashboard's *Evidence so far* section and at the end of `--report`. The verdict is:
+- **NOT YET** until 200 fills have settled;
+- **FAIL** if, after that, any rule is unmet;
+- **PASS** only when all four rules are met. A pass only allows a proposal; nothing is switched on.
+
+The pick-off diagnostic warns once filled and unfilled bids both have at least 20 results and unfilled bids
+win at least 15 points more often.
+
+Stopping is always safe: any simulated orders that were open are cancelled on the next start.

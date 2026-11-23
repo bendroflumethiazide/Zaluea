@@ -411,6 +411,8 @@ def test_dashboard_shows_simulated_results_labelled_and_survives_a_bad_file(tmp_
     assert sh["real"] and sh["running"] and "SIMULATED" in sh["label"]
     assert sh["account"] == "stub_maker/as_live" and len(sh["accounts"]) == 2
     assert sh["accounts"][0]["orders"] == 1 and sh["accounts"][0]["open"] == 1
+    ev = sh["evidence"]                                                  # decision-rule progress is shown
+    assert ev["strategy"] == "stub_maker" and ev["verdict"] == "NOT YET" and ev["rules"][0]["value"] == "0 of 200"
     assert not rs._shadow(now[0] + 600)["running"]                       # stale file is flagged
     (tmp_path / "data" / "sim" / "shadow.json").write_text('{"simulated": true, "accounts": [{}]}')
     with pytest.raises(KeyError):

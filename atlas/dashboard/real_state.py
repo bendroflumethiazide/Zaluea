@@ -140,6 +140,17 @@ class RealState:
         snap["audit_head"] = v.head_hash[:16]
         return snap
 
+    def _supervisor(self, now: float) -> dict | None:
+        """What python -m atlas.supervisor reports it is running (logs/supervisor.json), or None if never run."""
+        try:
+            sv = json.loads((self.p.root / "logs" / "supervisor.json").read_text())
+            age = int(now - float(sv["ts"]))
+            return {"running": age < 30, "age_s": age,
+                    "children": [{"label": c["label"], "running": bool(c["running"]), "restarts": int(c["restarts"]),
+                                  "last_exit": c.get("last_exit", "")} for c in sv["children"]]}
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     def _shadow(self, now: float) -> dict | None:
         """Shadow-trading results from sim/shadow.json (written by python -m atlas.shadow)."""
         path = self.p.root / "sim" / "shadow.json"
@@ -178,6 +189,8 @@ class RealState:
                           "rejected": a["rejected"], "open": a["open_orders"],
                           "reconciled": a.get("reconciled", True)} for a in accts],
             "assumptions": sd.get("assumptions", {}),
+            "evidence": next(({**ev, "strategy": k} for k, ev in (sd.get("evidence") or {}).items()), None),
+            "supervisor": self._supervisor(now),
             "vs_live": f"real account {real.get('pnl_total', '$0.00')} realized, kept separate. "
                        + real.get("note", ""),
         }

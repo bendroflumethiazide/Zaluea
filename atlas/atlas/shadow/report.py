@@ -19,11 +19,11 @@ def _ledger_totals(path: Path) -> dict:
     con.row_factory = sqlite3.Row
     try:
         fees = con.execute("SELECT COALESCE(SUM(fee),0) f FROM executions WHERE action='buy'").fetchone()["f"]
-        rows = con.execute("SELECT market, side, action, qty, price, fee FROM executions ORDER BY seq").fetchall()
+        rows = con.execute("SELECT market, side, action, qty, price, fee, ts FROM executions ORDER BY seq").fetchall()
         bought = con.execute("SELECT COALESCE(SUM(qty),0) q FROM executions WHERE action='buy'").fetchone()["q"]
     finally:
         con.close()
-    basis, held, closed = {}, {}, []
+    basis, held, closed, closed_ts = {}, {}, [], []
     for r in rows:
         k = (r["market"], r["side"])
         if r["action"] == "buy":
@@ -35,8 +35,9 @@ def _ledger_totals(path: Path) -> dict:
             basis[k] = basis.get(k, 0) - removed
             held[k] = q - r["qty"]
             closed.append(r["qty"] * r["price"] - r["fee"] - removed)
+            closed_ts.append(r["ts"])
     open_pos = [{"market": k[0], "side": k[1], "qty": held[k], "basis": basis[k]} for k in held if held[k] > 0]
-    return {"fees": fees, "closed": closed, "open_cost": sum(p["basis"] for p in open_pos), "positions": open_pos,
+    return {"fees": fees, "closed": closed, "closed_ts": closed_ts, "open_cost": sum(p["basis"] for p in open_pos), "positions": open_pos,
             "bought": bought}
 
 
@@ -84,12 +85,26 @@ def real_summary(data_dir: Path) -> dict:
             "note": "Real account (read-only). Live trading is off unless you authorized it."}
 
 
+def maker_evidence(folders: dict[str, Path], summaries: dict[str, dict]) -> dict[str, dict]:
+    """Decision-rule progress for every resting-order strategy that has a research account.
+    folders / summaries are keyed by account name ('<strategy>/<research|as_live>')."""
+    from .evidence import evaluate
+    out = {}
+    for name, a in summaries.items():
+        if a["order_type"] == "maker" and name.endswith("/research"):
+            strategy = name.rsplit("/", 1)[0]
+            out[strategy] = evaluate(_ledger_totals(folders[name] / "sim_ledger.db"), a,
+                                     summaries.get(f"{strategy}/as_live"))
+    return out
+
+
 def build_state(runner, now: float, notes: list[str]) -> dict:
-    accounts = []
+    accounts, folders = [], {}
     for s, acct in runner.accounts:
         a = account_summary(acct.folder, acct.name, acct.kind, runner.journal)
         a["open_orders"] = len(acct.sim.open_orders())
         accounts.append(a)
+        folders[acct.name] = acct.folder
     recent = [{"ts": r["ts"], "account": r["account"], "market": r["market"], "side": r["side"],
                "kind": r["kind"], "qty": r["qty"],
                "price": str(Money(r["price"])) if r["price"] is not None else None,
@@ -103,6 +118,7 @@ def build_state(runner, now: float, notes: list[str]) -> dict:
             "reference_ok": runner.ref_ok, "reference_note": runner.ref_reason,
             "feed_notes": [n for n in runner.feed_notes.values() if n], "notes": notes,
             "latest": runner.latest, "accounts": accounts, "recent": recent,
+            "evidence": maker_evidence(folders, {a["account"]: a for a in accounts}),
             "real": real_summary(runner.data_dir)}
 
 
@@ -116,12 +132,13 @@ def report_markdown(data_dir: str | Path) -> str:
     lines += ["| Account | Orders | Filled | Fill rate | Settled | Win rate | P&L | Fees | "
               "Missed (resolved) | Missed win rate | Missed hypothetical P&L | Rejected |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    makers, takers = [], []
+    makers, takers, folders = [], [], {}
     for ledger in sorted(root.glob("*/*/sim_ledger.db")):
         folder = ledger.parent
         name = f"{folder.parent.name}/{folder.name}"
         kind = "maker" if folder.parent.name == "crypto_maker" else "taker"
         a = account_summary(folder, name, kind, journal)
+        folders[name] = folder
         pct = lambda v: "–" if v is None else f"{v}%"
         lines.append(f"| {name} | {a['submitted']} | {a['orders_filled']} | {pct(a['fill_rate_pct'])} | {a['settled']} | "
                      f"{pct(a['win_rate_pct'])} | {a['pnl_total']} | {a['fees_paid']} | {a['missed']} "
@@ -130,6 +147,13 @@ def report_markdown(data_dir: str | Path) -> str:
         (makers if kind == "maker" else takers).append(a)
     for a in makers:
         lines.append(f"\n{a['account']}: P&L if resting orders pay no maker fee: {a['pnl_if_no_maker_fee']}")
+    for strategy, ev in maker_evidence(folders, {a["account"]: a for a in makers + takers}).items():
+        lines += ["", f"## Decision rules: {strategy} — {ev['verdict']}", "", ev["why"], ""]
+        lines += [f"- {'✅' if r['passed'] else '⬜'} {r['id']}. {r['rule']}: {r['value']}" for r in ev["rules"]]
+        d = ev["diagnostic"]
+        pct = lambda v: "–" if v is None else f"{v}%"
+        lines.append(f"- Diagnostic: filled bids won {pct(d['filled_win_rate'])}, unfilled bids would have won "
+                     f"{pct(d['missed_win_rate'])}. {d['note']}")
     real = real_summary(Path(data_dir))
     bad = [a for a in makers + takers if not a["reconciled"]]
     lines.append("" if not bad else "\n**WARNING: the journal and the simulated ledger disagree for "

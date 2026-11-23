@@ -275,7 +275,7 @@ function renderShadow() {
   const pnlEl = $("shadow-sub");
   if (s.real) {
     setText("shadow-balance", money(s.pnl_c, { sign: true }));
-    const state = s.running ? `updated ${s.age_s} s ago` : `NOT RUNNING (last update ${Math.round(s.age_s / 60)} min ago; start: python -m atlas.shadow --data &lt;folder&gt;)`;
+    const state = s.running ? `updated ${s.age_s} s ago` : `NOT RUNNING (last update ${Math.round(s.age_s / 60)} min ago; start it with Start-ATLAS.cmd)`;
     pnlEl.innerHTML = `Simulated P&L of <strong>${esc(s.account)}</strong>, ${state}. Live public data, simulated money; resting orders fill only when real trades sell through them.`;
   } else {
     setText("shadow-balance", money(s.balance_c));
@@ -315,6 +315,39 @@ function renderShadow() {
       : `<li>${p.qty} × ${esc(p.side)} · ${esc(p.market)} · entry ${p.entry_c}¢, now ${p.mark_c}¢ <span class="${p.mark_c >= p.entry_c ? "pos" : "neg"}">(${money((p.mark_c - p.entry_c) * p.qty, { sign: true })} sim.)</span></li>`).join("")
     : `<li class="muted">No simulated positions.</li>`);
   setText("shadow-vs", `Shadow vs live: ${s.vs_live}`);
+  renderEvidence(s.evidence);
+  renderSupervisor(s.supervisor);
+}
+const VERDICT_CHIP = { "PASS": "chip-good", "NOT YET": "chip-warn", "FAIL": "chip-bad" };
+function renderEvidence(ev) {
+  $("evidence").hidden = $("evidence-heading").hidden = !ev;
+  if (!ev) return;
+  const pct = (v) => v === null || v === undefined ? "–" : `${v}%`;
+  const d = ev.diagnostic;
+  setHTML($("evidence"), `<p class="ev-verdict"><span class="chip ${VERDICT_CHIP[ev.verdict] || "chip-warn"}">${esc(ev.verdict)}</span>
+      <span class="small">${esc(ev.why)}</span></p>
+    <ol class="plain ev-rules">${ev.rules.map(r => `<li class="${r.passed ? "ev-pass" : "ev-open"}">
+      <span class="ev-mark" aria-hidden="true">${r.passed ? "✓" : "○"}</span>
+      <span><span class="visually-hidden">${r.passed ? "Met: " : "Not met yet: "}</span>${esc(r.rule)}<br>
+      <strong>${esc(r.value)}</strong>${r.progress_pct === undefined ? "" :
+        `<progress max="100" value="${r.progress_pct}" aria-label="${esc(r.value)} settled fills"></progress>`}</span></li>`).join("")}</ol>
+    <p class="small ${d.picked_off ? "neg" : "muted"}">Filled bids won ${pct(d.filled_win_rate)}; unfilled bids would have won
+      ${pct(d.missed_win_rate)}. ${esc(d.note)}</p>
+    <p class="muted small">Rules fixed before any results existed (${esc(ev.strategy)}, research account). A pass only allows a proposal: live trading stays off until you enable it.</p>`);
+}
+function renderSupervisor(sv) {
+  const el = $("supervisor-line");
+  el.hidden = !sv;
+  if (!sv) return;
+  if (!sv.running) {
+    el.className = "small neg";
+    setText("supervisor-line", `Supervisor NOT RUNNING (last seen ${Math.round(sv.age_s / 60)} min ago). Start everything with Start-ATLAS.cmd.`);
+    return;
+  }
+  const up = sv.children.filter(c => c.running).length, restarts = sv.children.reduce((n, c) => n + c.restarts, 0);
+  const down = sv.children.filter(c => !c.running).map(c => `${c.label} restarting${c.last_exit ? ` (${c.last_exit})` : ""}`);
+  el.className = `small ${down.length ? "neg" : "muted"}`;
+  setText("supervisor-line", `Supervisor: ${up} of ${sv.children.length} processes running · ${restarts} automatic restart${restarts === 1 ? "" : "s"}${down.length ? " · " + down.join("; ") : ""}.`);
 }
 
 // ---------- positions, activity, summary ----------
