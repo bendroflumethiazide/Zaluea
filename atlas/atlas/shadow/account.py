@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 from ..audit import AuditLog
-from ..ledger import BudgetError, Ledger, ReservationRequest
+from ..ledger import BudgetError, Ledger, LedgerIntegrityError, ReservationRequest
 from ..limits import Limits
 from ..money import Money
 from ..risk.primary import max_cost
@@ -86,7 +86,8 @@ class SimAccount:
         before = {c: o.status for c, o in self.sim.orders.items()}
         events = []
         for coid, fill_id, q, price, fee, ts in self.sim.step(now, trades_by_market):
-            self.ledger.record_execution(fill_id, coid, "buy", q, price, fee, day)
+            if not self.ledger.record_execution(fill_id, coid, "buy", q, price, fee, day):
+                raise LedgerIntegrityError(f"Simulated fill {fill_id} was already recorded: refusing to drop it")
             events.append({"kind": "fill", "coid": coid, "qty": q, "price": price, "fee": fee, "ts": ts})
         for coid, o in self.sim.orders.items():
             if o.status in ("cancelled", "expired") and before.get(coid) not in ("cancelled", "expired"):

@@ -21,7 +21,6 @@ same exact arithmetic and the same hard limits, without ever touching the real l
 """
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass, field
 
 from ..money import KalshiFeeAccumulator, Money
@@ -76,7 +75,6 @@ class SimExchange:
         self.books: dict[tuple[str, str], Book] = {}
         self.orders: dict[str, SimOrder] = {}
         self.seen_trades: set[str] = set()
-        self._ids = itertools.count(1)
 
     # ------------------------------------------------------------------ market data in
     def update_book(self, market: str, side: str, book: Book) -> None:
@@ -180,6 +178,6 @@ class SimExchange:
 
     def _fill(self, o: SimOrder, q: int, price: Money, fee: Money, ts: float, out: list) -> None:
         o.filled += q
-        fill_id = f"sim-fill-{next(self._ids)}"
+        fill_id = f"{o.coid}-fill-{len(o.fills) + 1}"        # unique across restarts (coids are UUIDs)
         o.fills.append((fill_id, q, price, fee, ts))
         out.append((o.coid, fill_id, q, price, fee, ts))

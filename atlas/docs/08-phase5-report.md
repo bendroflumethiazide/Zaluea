@@ -1,6 +1,6 @@
 # Phase 5 report: shadow trading
 
-**Status:** built and tested (32 new tests; the full suite of 235 passes). It now needs to run for weeks to
+**Status:** built and tested (34 new tests; the full suite of 238 passes). It now needs to run for weeks to
 collect live evidence. No real order was placed, and none can be: shadow trading has no key, no gateway and no
 order code.
 
@@ -82,7 +82,19 @@ live data.
 - **A flaw found by the first live run, and fixed.** The first version withdrew a bid whenever the market's best bid slipped by one cent. On live data, its two bids lived 2–6 seconds each and never filled, and both would have won (+$0.44 hypothetical). A rule like that can never gather evidence. Since the fix, a resting bid stays while the model still values it above **its own price** after fees and no flip guard fires. It is cancelled when the value is gone, when a guard fires, or at minute 14. Two tests cover this.
 - **A second flaw found live, and fixed, in both strategies.** Right after a restart, the strategy bid $0.50 for YES eleven seconds after the price had dropped from $0.60, and was filled at once. That is the "falling knife" pattern the flip guard exists to block. But the guard compares against the price two minutes earlier, and with no history yet it was silently **skipped**. It now **fails closed**: no new order until two minutes of the market's own prices are available. The original buy-the-favorite strategy had the same gap and is fixed too.
 - **A gap in the REAL safety bound, found through a simulated partial fill, and fixed.** Kalshi rounds fees per fill, and its rebate of over-paid rounding is capped. An order filled in many small pieces can therefore pay up to just under $0.01 of rounding **per fill**, while ATLAS reserved $0.01 **per order**. Both the primary and the independent shadow risk manager now reserve the provable bound: model fee rounded up to the cent plus **$0.01 per contract** (an order can never have more fills than contracts). A test checks the bound against every possible way of splitting orders of 1–6 contracts at five prices. Effect: a 2-contract $0.88 order now reserves $1.80 instead of $1.79. Strategies size orders on this worst case but value them on the expected fee, so backtests still use the exact fee.
+- **A bookkeeping bug, found by reconciling the journal against the simulated ledger, and fixed.**
+  - Simulated fill IDs restarted from 1 after every restart. The ledger correctly ignores an ID it has already seen, so later fills were **silently dropped**: 5 contracts filled, only 1 settled.
+  - Fill IDs are now unique per order.
+  - The simulated account now **stops with an error** if the ledger ever refuses a fill.
+  - A refusal that repeats every 3 s (for example "daily loss limit reached") is now recorded once, not hundreds of times.
 - **Every unfilled order now records why it ended.** Possible reasons: withdrawn by the strategy, post-only rejection (the ask fell to our price during the 1-second delay), too little shown at the ask, or the time limit.
+
+**What the first 2½-hour live run suggested (discarded as evidence).** Over about 10 market windows the resting-bid strategy:
+- had 7–9 of 13–18 orders filled;
+- won only 1–2 of its 5–7 settled fills;
+- would have won 50–62% of the orders that went unfilled.
+
+That is the adverse-selection pattern this phase exists to detect: bids filled just before the price fell. The run is **not** counted, for three reasons. The sample is tiny, some fills came from before the guard fixes above, and the fill-ID bug corrupted part of its ledger. It is, though, an early warning that the decision rules below may well not be met.
 
 These are observations, not results. Results need weeks.
 

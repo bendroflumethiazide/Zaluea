@@ -482,3 +482,33 @@ def test_worst_case_fee_bounds_any_split_into_fills():
                 acc = KalshiFeeAccumulator()
                 total = sum((acc.fill(s, p, 700) for s in sizes), Money.ZERO)
                 assert total <= bound, (price, sizes, total, bound)
+
+
+def test_fill_ids_are_unique_across_restarts_and_never_silently_dropped(tmp_path):
+    day = "2026-11-22"
+    a = account(tmp_path)
+    for run in range(2):                                   # a restart builds a fresh simulator
+        a.sim = SimExchange(latency_s=0.0)
+        m = f"R{run}"
+        a.sim.update_book(m, "yes", book("0.39", "0.45", bid_size=0))
+        coid, _ = a.submit(proposal(market=m, qty=1), now=T0, day=day, expires_at=T0 + 600, kind="maker")
+        a.step(T0, day, {})
+        a.step(T0 + 2, day, {m: [trade(f"x{run}", "0.40", 1, "no", T0 + 1)]})
+        assert a.ledger.order(coid)["status"] == "filled"   # the second run's fill was NOT dropped
+    from atlas.ledger import LedgerIntegrityError
+    a.sim.update_book("R9", "yes", book("0.39", "0.45", bid_size=0))
+    a.submit(proposal(market="R9", qty=1), now=T0, day=day, expires_at=T0 + 600, kind="maker")
+    a.step(T0, day, {})
+    a.ledger.record_execution = lambda *args, **kw: False          # the ledger says "already recorded"
+    with pytest.raises(LedgerIntegrityError):
+        a.step(T0 + 2, day, {"R9": [trade("x9", "0.40", 1, "no", T0 + 1)]})
+
+
+def test_repeated_rejection_is_recorded_once(tmp_path):
+    r, k, strat, now = make_runner(tmp_path, real=False)
+    strat.evaluate = lambda v: Signal("stub_maker", strat.version, v.market, "yes", 9, M("0.41"), 6000, 4250,
+                                      M("0.30"), Money.ZERO, ["stub"], ["test"], "hold")
+    for _ in range(3):
+        r.tick()
+        now[0] += 3
+    assert all(a["rejected"] == 1 for a in r.tick()["accounts"])

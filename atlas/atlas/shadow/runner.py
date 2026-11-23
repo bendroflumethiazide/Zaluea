@@ -76,6 +76,7 @@ class ShadowRunner:
         self.latest: dict[str, dict] = {}
         self._markets_at = 0.0
         self._settle_at: dict[str, float] = {}
+        self._last_reject: dict[tuple, str] = {}       # record a repeated rejection only once
         self._recover()
 
     # ------------------------------------------------------------------ startup
@@ -230,6 +231,10 @@ class ShadowRunner:
             expires = now + TAKER_TTL_S
         coid, why = acct.submit(p, now=now, day=day, expires_at=expires, kind=acct.kind)
         kind = "submitted" if coid else "rejected"
+        key = (acct.name, v.market, r.side)
+        if not coid and self._last_reject.get(key) == why:
+            return                                     # same refusal as last time: already recorded
+        self._last_reject[key] = why if not coid else ""
         self.journal.add(ts=now, day=day, account=acct.name, strategy=s.name, market=v.market, side=r.side,
                          kind=kind, qty=r.qty, price=r.limit_price, fee=r.fee, coid=coid,
                          detail={"reason": why, "prob_bp": r.prob_bp, "market_bp": r.market_prob_bp,
