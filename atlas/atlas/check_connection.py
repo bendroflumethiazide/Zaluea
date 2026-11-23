@@ -13,7 +13,7 @@ Everything is READ-ONLY by default. Two optional, explicit extras:
   --apply-safe-settings  Alpaca: set long-only, no margin, no options on the
                          account. Asks you to type APPLY first.
 
-Settings can be saved once in %USERPROFILE%\.atlas\config.json (outside the
+Settings can be saved once in %USERPROFILE%/.atlas/config.json (outside the
 repository) so you don't have to type them; command-line options override it:
 
     {"kalshi_key_id": "...", "kalshi_key_file": "C:/Users/you/.atlas/keys/kalshi-demo.key",
