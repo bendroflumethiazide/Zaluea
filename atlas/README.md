@@ -8,10 +8,14 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | Phase | State |
 |---|---|
 | 1. Audit and plan | ✅ Done: [`docs/01-audit.md`](docs/01-audit.md), [`docs/02-plan.md`](docs/02-plan.md) |
-| 2. Safety foundation | ✅ Done: 93 tests passing, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
+| 2. Safety foundation | ✅ Done, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
 | Dashboard | ✅ Built; shows real safety data read-only with `--data`; market panels still sample |
-| 3. Market data (real Kalshi + Alpaca clients) | Next |
-| 4–10 | Not started |
+| 3. Market data | ✅ Done: real Kalshi + Alpaca clients, BTC reference, esports identity; see [`docs/05-phase3-report.md`](docs/05-phase3-report.md) |
+| 4. Analytics (probability, EV, strategies, correlation) | Next |
+| 5–10 | Not started |
+
+**Connect your practice accounts:** follow [`docs/04-connecting.md`](docs/04-connecting.md), then run
+`python -m atlas.check_connection` (read-only unless you add `--demo-order-test`).
 
 No part of ATLAS can place a real order yet: the only exchange it knows is a fake one used for testing.
 Live trading will only ever be enabled by you.
@@ -56,8 +60,9 @@ Every panel uses sample data, and the controls only change that sample data.
 ```
 atlas/
   atlas/        the platform: money, clock, storage, audit, limits, control, ledger,
-                risk/ (primary), shadowrisk/ (independent), gateway, watchdog, exchange/ (fake)
-  tests/        93 automated tests (Part 25 acceptance tests and more)
+                risk/ (primary), shadowrisk/ (independent), gateway, watchdog,
+                exchange/ (fake, kalshi, alpaca), marketdata/ (btc, esports), check_connection
+  tests/        166 automated tests (Part 25 acceptance tests, clients, simulators)
   docs/         audit, plan, phase reports
   dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```
