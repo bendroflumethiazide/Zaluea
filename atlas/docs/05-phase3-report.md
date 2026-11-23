@@ -1,6 +1,6 @@
 # ATLAS Phase 3: Market data report
 
-Date: 2026-11-23. Result: **163 automated tests, all passing.**
+Date: 2026-11-23. Result: **168 automated tests, all passing**, plus a live check on Kalshi's demo exchange.
 Nothing in this phase traded. The real clients were exercised against documented responses, a Kalshi HTTP simulator, and live **public** endpoints only.
 
 ## 1. Verified against current documentation (not memory)
@@ -46,15 +46,28 @@ I read Kalshi's OpenAPI spec 3.37.0 and its guides, and Alpaca's API reference, 
 - A CS2 market was classified as esports.
 - Three BTC sources agreed within 0.03%.
 
-## 3. Not done or limited (honest list)
+## 3. Verified live on the owner's PC (Kalshi DEMO, 2026-11-23)
 
-- **No authenticated call has reached Kalshi or Alpaca yet.** That needs your demo and paper keys on your PC (`docs/04-connecting.md`). The simulator tests prove the logic against the documented formats, not the live services.
+`python -m atlas.check_connection --demo-order-test` passed every check:
+- **Signing:** the Ed25519 key signs correctly, and the clock was within ±2 s of Kalshi.
+- **Reads:** balance, per-shard balances, positions, resting orders and the user-data timestamp all read correctly.
+- **Order cycle:** one 1-contract YES order at $0.01, immediate-or-cancel, on `KXDEMOFUTHOURLY-26NOV23H03-UP`. It was accepted, filled 0 and cancelled, and was found again by its client order id with status cancelled and filled 0.
+
+**Bugs found by the live runs and fixed** (none had shown up in simulated tests):
+1. **Per-shard balances printed as `$None`.** The spec names the field `IndexedBalance.balance`; ATLAS read `balance_dollars`.
+2. **Order prices were sent with 6 decimals and rejected** with "invalid dollar precision: -6". Request prices take 2–4 decimals. They are now sent with exactly 4, and any price needing more is refused before sending. The rejection was correctly treated as definitive.
+
+The simulator now reproduces both behaviours, so tests cover them.
+
+## 4. Not done or limited (honest list)
+
+- **Alpaca has not been called with real (paper) keys yet.** Kalshi demo is verified as described above.
 - **Stock and ETF execution is disabled** until the ledger supports exact fractional shares (Phase 6). Market data, account safety checks and order building are done.
 - **Esports trading stays disabled:** there is no reliable live game-state feed (they are paid services). Identity validation works.
 - **WebSocket streaming** (faster fills and order-book updates) is not built. REST polling is used. Faster flip detection comes with the strategy work.
 - **The recommended Kalshi host** `external-api.kalshi.com` isn't on this cloud environment's allow-list. Tests here used the still-supported `api.elections.kalshi.com`; your PC has no such restriction.
 
-## 4. What you can do now
+## 5. What you can do now
 
 Follow `docs/04-connecting.md`:
 1. Create a Kalshi demo key and an Alpaca paper key.
