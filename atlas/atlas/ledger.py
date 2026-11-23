@@ -301,6 +301,12 @@ class Ledger:
                 "SELECT 1 FROM orders WHERE market=? AND side=? AND action='buy' AND status IN "
                 f"({','.join('?' * len(OPEN_STATES))})", (req.market, req.side, *OPEN_STATES)).fetchone()
             checks.append((in_flight is None, "An order for this market and side is already in flight"))
+            other = "no" if req.side == "yes" else "yes"
+            opposite = self.con.execute(
+                "SELECT 1 FROM orders WHERE market=? AND side=? AND action='buy' AND status IN "
+                f"({','.join('?' * len(OPEN_STATES))})", (req.market, other, *OPEN_STATES)).fetchone()
+            checks.append(((req.module, req.market, other) not in held and opposite is None,
+                           "Already holding or buying the opposite side of this market (Kalshi nets YES and NO)"))
             new_position = (req.module, req.market, req.side) not in held
             open_markets = {(p.module, p.market, p.side) for p in s.positions}
             pending_markets = {(r["module"], r["market"], r["side"]) for r in self.con.execute(

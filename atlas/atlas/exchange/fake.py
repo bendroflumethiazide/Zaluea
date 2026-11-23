@@ -34,20 +34,23 @@ class OrderRejected(ExchangeError):
     pass
 
 
+U = 1_000_000          # units per dollar ($0.000001), like the real API's 6 decimals
+
+
 def _u(s: str) -> int:
-    """'0.8800' -> 8800 units of $0.0001 (strings only, never floats)."""
+    """'0.8800' -> 880000 units of $0.000001 (strings only, never floats)."""
     whole, _, frac = s.partition(".")
-    return int(whole) * 10_000 + int((frac + "0000")[:4])
+    return int(whole) * U + int((frac + "000000")[:6])
 
 
 def _s(u: int) -> str:
-    return f"{'-' if u < 0 else ''}{abs(u) // 10_000}.{abs(u) % 10_000:04d}"
+    return f"{'-' if u < 0 else ''}{abs(u) // U}.{abs(u) % U:06d}"
 
 
 def _fee(qty: int, price: int) -> int:
-    num = 7 * qty * price * (10_000 - price) * 100
-    cents = -(-num // (100 * 10_000 * 10_000))
-    return cents * 100
+    num = 7 * qty * price * (U - price) * 100
+    cents = -(-num // (100 * U * U))
+    return cents * (U // 100)
 
 
 @dataclass
@@ -76,7 +79,7 @@ class FakeOrder:
 
 @dataclass
 class FakeExchange:
-    balance_units: int = 50 * 10_000
+    balance_units: int = 50 * U
     clock: callable = time.time
     markets: dict = field(default_factory=dict)        # market -> {"event", "module", "books": {side: Book}}
     orders: dict = field(default_factory=dict)         # client_order_id -> FakeOrder
@@ -240,7 +243,7 @@ class FakeExchange:
         """Settle a prediction market: winners get $1 per contract."""
         for (mk, sd), pos in list(self.positions_map.items()):
             if mk == market and pos[0] > 0:
-                payout = pos[0] * 10_000 if sd == winning_side else 0
+                payout = pos[0] * U if sd == winning_side else 0
                 self.balance_units += payout
                 self.settlements_log.append({"settle_id": f"settle-{next(self._ids)}", "market": mk, "side": sd,
                                              "qty": pos[0], "payout": _s(payout), "ts": self.clock()})

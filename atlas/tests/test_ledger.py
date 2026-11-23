@@ -161,6 +161,16 @@ def test_duplicate_fill_is_idempotent(led):
     assert led.snapshot(DAY).positions[0].qty == 1
 
 
+def test_never_both_sides_of_one_market(led):
+    coid = led.reserve(req("K1", cost="0.91", qty=1, price="0.90"), ROOMY, DAY)
+    with pytest.raises(BudgetError) as e:
+        led.reserve(req("K1", cost="0.20", qty=1, price="0.10", side="no"), ROOMY, DAY)
+    assert "opposite side" in e.value.reason
+    led.record_execution("f1", coid, "buy", 1, M("0.90"), Money.cents(1), DAY)
+    with pytest.raises(BudgetError):
+        led.reserve(req("K1", cost="0.20", qty=1, price="0.10", side="no"), ROOMY, DAY)
+
+
 def test_one_order_in_flight_per_market(led):
     led.reserve(req("K1", cost="1.00", qty=1, price="0.95"), ROOMY, DAY)
     with pytest.raises(BudgetError) as e:

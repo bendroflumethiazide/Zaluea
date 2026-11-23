@@ -66,7 +66,11 @@ def ny_day(ts: float) -> str:
 
 def _decode_limit(v: str):
     kind, val = v.split(":", 1)
-    return (Decimal(int(val)) / Decimal(10_000)) if kind == "M" else int(val)
+    if kind == "D":
+        return D(val)
+    if kind == "I":
+        return int(val)
+    raise ValueError(f"Unknown limit format {kind}")
 
 
 @dataclass
@@ -326,6 +330,9 @@ class ShadowRiskManager:
             bad("TOTAL_EXPOSURE", f"{total} + {cost} above {L['max_total_exposure']}")
         if event_exp + cost > L["max_event_exposure"]:
             bad("EVENT_EXPOSURE", f"Event {info['event']}: {event_exp} + {cost} above {L['max_event_exposure']}")
+        other = "no" if order["side"] == "yes" else "yes"
+        if (order["market"], other) in exposure or (order["market"], other) in reported:
+            bad("NETTING", "Opposite side of this market is already held or in flight")
         keys = set(exposure) | {(order["market"], order["side"])}
         if len(keys) > L["max_positions"]:
             bad("POSITIONS", f"Would hold {len(keys)} positions")

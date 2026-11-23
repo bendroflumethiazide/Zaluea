@@ -71,12 +71,18 @@ class LimitError(ValueError):
 
 
 def _encode(v) -> str:
-    return f"M:{v.units}" if isinstance(v, Money) else f"I:{v}"
+    """Money is stored as an exact decimal string ("D:2.0000"), independent of
+    the internal unit size; counts as "I:3"."""
+    return f"D:{v.to_str()}" if isinstance(v, Money) else f"I:{v}"
 
 
 def _decode(s: str):
     kind, val = s.split(":", 1)
-    return Money(int(val)) if kind == "M" else int(val)
+    if kind == "D":
+        return Money.parse(val)
+    if kind == "I":
+        return int(val)
+    raise StorageError(f"Unknown stored limit format {kind!r}")
 
 
 SCHEMA = """

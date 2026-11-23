@@ -1,8 +1,9 @@
 """Exact money for ATLAS.
 
-All amounts are integers of UNITS, where 1 unit = $0.0001. Kalshi quotes
-prices to four decimals and US stocks under $1 trade in sub-pennies, so a
-tenth of a cent is not fine enough and a float is never acceptable.
+All amounts are integers of UNITS, where 1 unit = $0.000001 (one millionth
+of a dollar). Kalshi's API returns fill prices and costs with up to six
+decimals, and exact reconciliation needs every digit, so a float (or any
+rounding) is never acceptable.
 
 `Money` refuses floats at every entry point. Authorization decisions in
 ATLAS must only ever compare `Money` (or plain ints) - never floats.
@@ -12,9 +13,10 @@ from __future__ import annotations
 import re
 from functools import total_ordering
 
-UNITS_PER_DOLLAR = 10_000
-UNITS_PER_CENT = 100
-_DEC = re.compile(r"^\s*(-)?\$?(\d+)(?:\.(\d{1,4}))?\s*$")
+UNITS_PER_DOLLAR = 1_000_000
+UNITS_PER_CENT = 10_000
+DECIMALS = 6
+_DEC = re.compile(r"^\s*(-)?\$?(\d+)(?:\.(\d{1,6}))?\s*$")
 
 
 class MoneyError(ValueError):
@@ -36,14 +38,14 @@ class Money:
     # ---- construction ----
     @classmethod
     def parse(cls, text: str) -> "Money":
-        """'1.25', '$0.9870', '-3' -> Money. At most 4 decimals; no floats."""
+        """'1.25', '$0.9870', '-3', '0.123456' -> Money. At most 6 decimals; no floats."""
         if not isinstance(text, str):
             raise MoneyError(f"Money.parse needs a string, got {type(text).__name__}")
         m = _DEC.match(text)
         if not m:
             raise MoneyError(f"Not a money amount: {text!r}")
         sign, whole, frac = m.groups()
-        units = int(whole) * UNITS_PER_DOLLAR + int((frac or "").ljust(4, "0") or 0)
+        units = int(whole) * UNITS_PER_DOLLAR + int((frac or "").ljust(DECIMALS, "0") or 0)
         return cls(-units if sign else units)
 
     @classmethod
@@ -89,10 +91,12 @@ class Money:
         return Money(-((-self.units) // UNITS_PER_CENT) * UNITS_PER_CENT)
 
     def to_str(self) -> str:
-        """Exact decimal string, e.g. '0.9870' or '-1.5000'."""
+        """Exact decimal string with 4-6 decimals, e.g. '0.9870', '-1.5000', '0.123456'."""
         s = "-" if self.units < 0 else ""
         u = abs(self.units)
-        return f"{s}{u // UNITS_PER_DOLLAR}.{u % UNITS_PER_DOLLAR:04d}"
+        frac = f"{u % UNITS_PER_DOLLAR:06d}"
+        frac = frac[:4] + frac[4:].rstrip("0")
+        return f"{s}{u // UNITS_PER_DOLLAR}.{frac}"
 
     def __str__(self):
         s = "-" if self.units < 0 else ""
@@ -100,7 +104,7 @@ class Money:
         cents_part = u % UNITS_PER_DOLLAR
         if cents_part % UNITS_PER_CENT == 0:
             return f"{s}${u // UNITS_PER_DOLLAR:,}.{cents_part // UNITS_PER_CENT:02d}"
-        return f"{s}${u // UNITS_PER_DOLLAR:,}.{cents_part:04d}"
+        return f"{s}${u // UNITS_PER_DOLLAR:,}.{f'{cents_part:06d}'.rstrip('0')}"
 
     def __repr__(self):
         return f"Money({self.to_str()})"
@@ -122,8 +126,8 @@ def kalshi_taker_fee(contracts: int, price: Money, multiplier_pct: int = 100) ->
         fee = ceil_to_cent( 0.07 * C * P * (1 - P) * multiplier )
 
     P is the price in dollars (0..1). Computed with integers only:
-    with p = price in units (P = p / 10_000), the fee in dollars is
-    7 * C * p * (10_000 - p) * mult / (100 * 10_000^2 * 100).
+    with p = price in units (P = p / U, U = units per dollar), the fee in
+    cents is 7 * C * p * (U - p) * mult / (100 * U^2).
     """
     if isinstance(contracts, bool) or not isinstance(contracts, int) or contracts < 0:
         raise MoneyError("contracts must be a non-negative int")

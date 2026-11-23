@@ -22,13 +22,16 @@ def test_money_refuses_floats():
 
 
 def test_money_parse_and_format_exact():
-    assert Money.parse("0.9870").units == 9870
-    assert Money.parse("$20").units == 200_000
+    assert Money.parse("0.9870").units == 987_000
+    assert Money.parse("0.123456").units == 123_456
+    assert Money.parse("$20").units == 20_000_000
+    assert Money.parse("0.123456").to_str() == "0.123456"
+    assert str(Money.parse("0.123450")) == "$0.12345"
     assert Money.parse("-1.5").to_str() == "-1.5000"
     assert str(Money.parse("1234.5")) == "$1,234.50"
     assert str(Money.parse("0.9875")) == "$0.9875"
     with pytest.raises(MoneyError):
-        Money.parse("0.12345")
+        Money.parse("0.1234567")
     # 0.1 + 0.2 is exact
     assert Money.parse("0.1") + Money.parse("0.2") == Money.parse("0.3")
 
@@ -38,7 +41,17 @@ def test_kalshi_fee_matches_exact_fraction_everywhere():
         for p in range(0, 10_001, 37):
             exact = Fraction(7, 100) * c * Fraction(p, 10_000) * (1 - Fraction(p, 10_000))
             cents = -(-exact * 100 // 1)
-            assert kalshi_taker_fee(c, Money(p)) == Money.cents(int(cents)), (c, p)
+            assert kalshi_taker_fee(c, Money(p * 100)) == Money.cents(int(cents)), (c, p)
+
+
+def test_kalshi_fee_exact_at_six_decimal_prices():
+    import random
+    rnd = random.Random(7)
+    for _ in range(3000):
+        c, p = rnd.randint(1, 500), rnd.randint(0, 1_000_000)
+        exact = Fraction(7, 100) * c * Fraction(p, 1_000_000) * (1 - Fraction(p, 1_000_000))
+        cents = -(-exact * 100 // 1)
+        assert kalshi_taker_fee(c, Money(p)) == Money.cents(int(cents)), (c, p)
 
 
 def test_kalshi_fee_known_values():

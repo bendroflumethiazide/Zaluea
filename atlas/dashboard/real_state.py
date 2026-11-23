@@ -34,7 +34,7 @@ COMPONENTS = [("gateway", "Execution gateway"), ("primary_risk", "Primary risk m
 
 
 def cents(m) -> int:
-    return m.units // 100
+    return m.units // 10_000
 
 
 class RealState:
