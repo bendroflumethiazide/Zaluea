@@ -32,6 +32,8 @@ from .strategies.crypto_flip import CryptoFlipFavorite
 ONE = Money.dollars(1)
 CRYPTO_SERIES = ("KXBTC15M",)
 ESPORTS_SERIES = ("KXCS2GAME", "KXLOLGAME", "KXVALORANTGAME", "KXDOTA2GAME")
+EQUITY_WATCHLIST = (("SPY", "etfs"), ("QQQ", "etfs"), ("AAPL", "stocks"), ("MSFT", "stocks"), ("NVDA", "stocks"))
+SAFETY_RECHECK_S = 300
 HISTORY_S = 2 * 3600
 
 
@@ -41,7 +43,7 @@ def cents(m: Money | None) -> float | None:
 
 class Scanner:
     def __init__(self, data_dir: str | Path, kalshi=None, reference=None, history=recent_history,
-                 strategy=None, clock=time.time):
+                 strategy=None, clock=time.time, alpaca=None):
         self.dir = Path(data_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.k = kalshi or KalshiExchange("https://api.elections.kalshi.com/trade-api/v2", signer=None)
@@ -54,6 +56,9 @@ class Scanner:
         self.quote_hist: dict[str, dict[str, list]] = {}
         self.predicted: set[str] = set()
         self.bootstrapped = False
+        self.alpaca = alpaca                 # READ-ONLY use: quotes, clock, account safety check
+        self._alpaca_safety: tuple[float, list[str]] | None = None
+        self._clock_cache: tuple[float, dict] | None = None
 
     # ------------------------------------------------------------------ data
     def _refresh_reference(self) -> tuple[bool, str]:
@@ -101,8 +106,7 @@ class Scanner:
                     rows.append(self._row(m["ticker"], "esports", "-", None, None, None, None, None, "no_trade", why))
             except Exception as e:
                 notes.append(f"{series}: {e}")
-        rows.append(self._row("Stocks and ETFs", "stocks", "-", None, None, None, None, None, "no_trade",
-                              "Not scanned: needs your Alpaca paper key on your PC; live execution arrives in Phase 6"))
+        rows += self._equity_rows(notes)
         self._resolve_predictions()
         sc = self.log.scorecard(strategy=self.strategy.name)
         out = {"ts": now, "rows": rows, "notes": notes, "reference_ok": ref_ok,
@@ -155,6 +159,53 @@ class Scanner:
                          prob / 100 if prob is not None else None,
                          cents(sa - sb) if sa is not None and sb is not None else None, depth, verdict, reason)
 
+    def _equity_rows(self, notes: list) -> list[dict]:
+        if self.alpaca is None:
+            return [self._row("Stocks and ETFs", "stocks", "-", None, None, None, None, None, "no_trade",
+                              "Not scanned: start the scanner with your Alpaca paper key (see README)")]
+        from .limits import DEFAULTS
+        now = self.clock()
+        try:
+            if self._alpaca_safety is None or now - self._alpaca_safety[0] > SAFETY_RECHECK_S:
+                self._alpaca_safety = (now, self.alpaca.safety_problems())
+            if self._clock_cache is None or now - self._clock_cache[0] > 60:
+                self._clock_cache = (now, self.alpaca.market_clock())
+        except Exception as e:
+            notes.append(f"alpaca: {e}")
+            return [self._row("Stocks and ETFs", "stocks", "-", None, None, None, None, None, "no_trade",
+                              f"Alpaca unavailable: {type(e).__name__}")]
+        problems = self._alpaca_safety[1]
+        is_open = self._clock_cache[1]["is_open"]
+        rows = []
+        for symbol, category in EQUITY_WATCHLIST:
+            try:
+                q = self.alpaca.latest_quote(symbol)
+            except Exception as e:
+                rows.append(self._row(symbol, category, "BUY", None, None, None, None, None, "no_trade",
+                                      f"Quote unavailable: {type(e).__name__}"))
+                continue
+            bid = Money.parse(q["bid"]) if q["bid"] else None
+            ask = Money.parse(q["ask"]) if q["ask"] else None
+            why = []
+            if problems:
+                why.append("Account not safe: " + "; ".join(problems))
+            if not is_open:
+                why.append("Market closed")
+            if bid is None or ask is None:
+                why.append("No two-sided quote")
+            else:
+                spread_bps = (ask - bid).units * 20_000 // (ask + bid).units
+                if spread_bps > DEFAULTS.stock_max_spread_bps:
+                    why.append(f"Spread {spread_bps / 100:.2f}% is above the "
+                               f"{DEFAULTS.stock_max_spread_bps / 100:.2f}% limit (quote may be stale or thin)")
+            why.append("No stock strategy yet: analysis only; execution arrives in Phase 6")
+            price = ask.units / 1_000_000 if ask else None                      # display only
+            spread = (ask - bid).units / 1_000_000 if ask and bid else None
+            depth = round(price * q["ask_size"], 2) if price else None
+            rows.append(self._row(symbol, category, "BUY", price, None, None, spread, depth, "no_trade",
+                                  "; ".join(why) + f" (quote from {q['source']})"))
+        return rows
+
     def _resolve_predictions(self):
         for r in self.log.con.execute("SELECT DISTINCT market FROM predictions WHERE outcome IS NULL").fetchall():
             try:
@@ -178,8 +229,19 @@ def main(argv=None):
     ap.add_argument("--data", required=True)
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--interval", type=float, default=10.0)
+    ap.add_argument("--alpaca-key-id", help="Alpaca PAPER key id (read-only use)")
+    ap.add_argument("--alpaca-secret-file", help="file holding the Alpaca PAPER secret")
     a = ap.parse_args(argv)
-    s = Scanner(a.data)
+    from .check_connection import load_config
+    saved = load_config()
+    key_id = a.alpaca_key_id or saved.get("alpaca_key_id")
+    secret_file = a.alpaca_secret_file or saved.get("alpaca_secret_file")
+    alpaca = None
+    if key_id and secret_file:
+        from .exchange.alpaca import AlpacaClient
+        alpaca = AlpacaClient(key_id, Path(secret_file).read_text().strip(), paper=True)
+        print(f"Alpaca PAPER quotes enabled (key ...{key_id[-4:]}, read-only use)", flush=True)
+    s = Scanner(a.data, alpaca=alpaca)
     while True:
         out = s.scan_once()
         print(f"{time.strftime('%H:%M:%S')} scanned {len(out['rows'])} markets; model: {out['model']['scorecard']}",
