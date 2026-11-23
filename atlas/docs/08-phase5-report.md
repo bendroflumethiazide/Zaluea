@@ -96,6 +96,20 @@ live data.
 
 That is the adverse-selection pattern this phase exists to detect: bids filled just before the price fell. The run is **not** counted, for three reasons. The sample is tiny, some fills came from before the guard fixes above, and the fill-ID bug corrupted part of its ledger. It is, though, an early warning that the decision rules below may well not be met.
 
+**A clean 90-minute run on the fixed code (2026-11-23, about 6 market windows): the books match.**
+- 0 failed ticks.
+- The journal and both simulated ledgers agree for every account, and no reconciliation warning was printed.
+- Every filled market settled with its full quantity: 14 of 14 contracts in `as_live` and 17 of 17 in `research`.
+
+| Account | Orders | Filled | Settled | Won | P&L (assumed maker fee) | P&L (no maker fee) | Unfilled orders that would have won |
+|---|---|---|---|---|---|---|---|
+| maker / as_live | 10 | 5 | 5 | 4 | +$2.35 | +$2.44 | 4 of 5 |
+| maker / research | 14 | 6 | 6 | 5 | +$3.62 | +$3.73 | 5 of 8 |
+| favorite / both | 2 | 0 | 0 | – | $0.00 | – | 2 of 2 |
+
+This run went the opposite way from the first: filled orders won more often than unfilled ones. With 6 settled
+fills, neither run says anything about edge. Both runs together are 1% of the 200 settled fills that rule 1 needs.
+
 These are observations, not results. Results need weeks.
 
 ## Decision rules, fixed now, before any results exist
