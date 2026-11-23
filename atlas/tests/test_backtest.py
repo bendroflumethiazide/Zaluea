@@ -56,3 +56,14 @@ def test_too_few_trades_is_never_a_pass_even_if_profitable():
     markets, ref = synthetic(win=True)
     res = bt.walk_forward(markets, ref, min_train_weeks=3, min_train_trades=5, grid=SMALL_GRID)
     assert res.meta["oos"]["pnl"].units > 0 and not res.passed and "out-of-sample trades" in res.verdict
+
+
+def test_collector_reads_both_live_and_archive_candle_formats():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "research"))
+    from collect_btc15m import rows
+    live = {"end_period_ts": 1, "yes_bid": {"close_dollars": "0.7300"}, "yes_ask": {"close_dollars": "0.7400"},
+            "volume_fp": "10.00"}
+    archive = {"end_period_ts": 2, "yes_bid": {"close": "0.7300"}, "yes_ask": {"close": "0.7400"}, "volume": "10.00"}
+    assert rows([live, archive]) == [[1, "0.7300", "0.7400", "10.00"], [2, "0.7300", "0.7400", "10.00"]]

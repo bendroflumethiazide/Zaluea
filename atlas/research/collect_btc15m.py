@@ -72,11 +72,17 @@ def keep(m: dict) -> dict:
             "expiration_value": m.get("expiration_value")}
 
 
+def _close(side: dict | None):
+    """The live API names the field `close_dollars`; the historical archive names it `close`."""
+    side = side or {}
+    return side.get("close_dollars", side.get("close"))
+
+
 def rows(candles: list) -> list:
     out = []
     for c in candles:
-        out.append([c["end_period_ts"], (c.get("yes_bid") or {}).get("close_dollars"),
-                    (c.get("yes_ask") or {}).get("close_dollars"), c.get("volume_fp")])
+        out.append([c["end_period_ts"], _close(c.get("yes_bid")), _close(c.get("yes_ask")),
+                    c.get("volume_fp", c.get("volume"))])
     return out
 
 
