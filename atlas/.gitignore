@@ -8,3 +8,4 @@ data/
 *.pem
 *.key
 secrets/
+research/data/
