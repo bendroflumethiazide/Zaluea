@@ -20,6 +20,7 @@ from sample_state import SampleState
 
 STATIC = Path(__file__).parent / "static"
 STATE = SampleState()
+REAL = None          # set by --data: read-only view of a real ATLAS data folder
 CSP = ("default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; "
        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
@@ -47,7 +48,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/state":
-            return self._json(200, STATE.snapshot())
+            snap = STATE.snapshot()
+            if REAL is not None:
+                snap = REAL.overlay(snap)
+            return self._json(200, snap)
         rel = "index.html" if path == "/" else path.lstrip("/")
         f = (STATIC / rel).resolve()
         if STATIC.resolve() not in f.parents or not f.is_file():
@@ -64,6 +68,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": "Request refused."})
         if self.path != "/api/control":
             return self._json(404, {"error": "Not found"})
+        if REAL is not None:
+            return self._json(409, {"ok": False, "message": "Controls are read-only here: owner controls go "
+                                    "through the execution gateway, which is connected in Phase 7."})
         try:
             n = min(int(self.headers.get("Content-Length", 0)), 4096)
             body = json.loads(self.rfile.read(n) or b"{}")
@@ -82,12 +89,18 @@ def ticker():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8770)
+    ap.add_argument("--data", help="show real safety data from this ATLAS data folder (read-only)")
     a = ap.parse_args()
+    global REAL
+    if a.data:
+        from real_state import RealState
+        REAL = RealState(a.data)
     mimetypes.add_type("image/webp", ".webp")
     mimetypes.add_type("text/javascript", ".js")
     threading.Thread(target=ticker, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
-    print(f"ATLAS dashboard (preview, sample data): http://127.0.0.1:{a.port}  (Ctrl+C to stop)")
+    mode = f"safety data from {a.data} (read-only)" if a.data else "preview, sample data"
+    print(f"ATLAS dashboard ({mode}): http://127.0.0.1:{a.port}  (Ctrl+C to stop)")
     srv.serve_forever()
 
 

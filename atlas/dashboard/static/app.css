@@ -105,6 +105,7 @@ main:focus { outline: none; }
 }
 .btn-stop svg { width: 1.1rem; height: 1.1rem; }
 .btn-stop[aria-pressed="true"] { background: #ffd0d8; }
+.btn-stop:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; }
 
 /* ---------- layout ---------- */
 .layout {

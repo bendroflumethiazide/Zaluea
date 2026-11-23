@@ -8,11 +8,21 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | Phase | State |
 |---|---|
 | 1. Audit and plan | ✅ Done: [`docs/01-audit.md`](docs/01-audit.md), [`docs/02-plan.md`](docs/02-plan.md) |
-| Dashboard preview | ✅ Front end built and tested on **sample data**. It is not connected to any exchange or broker and cannot place orders. |
-| 2. Safety foundation | Next |
-| 3–10 | Not started |
+| 2. Safety foundation | ✅ Done: 93 tests passing, see [`docs/03-phase2-report.md`](docs/03-phase2-report.md) |
+| Dashboard | ✅ Built; shows real safety data read-only with `--data`; market panels still sample |
+| 3. Market data (real Kalshi + Alpaca clients) | Next |
+| 4–10 | Not started |
 
-No part of ATLAS can place a real order yet. Live trading will only ever be enabled by you.
+No part of ATLAS can place a real order yet: the only exchange it knows is a fake one used for testing.
+Live trading will only ever be enabled by you.
+
+## Run the tests
+
+```powershell
+cd path\to\Zaluea\atlas
+python -m pip install -r requirements.txt
+python -m pytest tests
+```
 
 ## Run the dashboard preview (Windows)
 
@@ -25,7 +35,8 @@ cd dashboard
 python server.py
 ```
 
-Then open **http://127.0.0.1:8770** in your browser.
+Then open **http://127.0.0.1:8770** in your browser. To show real safety data from an ATLAS data folder
+(read-only), start it with `python server.py --data path\to\data`.
 
 The page:
 - shows your feed artwork at the top left, with a live activity feed under it
@@ -44,6 +55,9 @@ Every panel uses sample data, and the controls only change that sample data.
 
 ```
 atlas/
-  docs/         audit, plan, and later the final engineering report
-  dashboard/    server.py, sample_state.py, static/ (HTML, CSS, JS, feed image)
+  atlas/        the platform: money, clock, storage, audit, limits, control, ledger,
+                risk/ (primary), shadowrisk/ (independent), gateway, watchdog, exchange/ (fake)
+  tests/        93 automated tests (Part 25 acceptance tests and more)
+  docs/         audit, plan, phase reports
+  dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```

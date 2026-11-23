@@ -33,6 +33,7 @@ let approvalDeadline = 0;
 
 // ---------- formatting ----------
 function money(c, { sign = false } = {}) {
+  if (c === null || c === undefined) return "n/a";
   const v = Math.abs(c) / 100;
   const s = v.toLocaleString(undefined, { style: "currency", currency: "USD" });
   if (!sign || c === 0) return c < 0 ? "-" + s : s;
@@ -63,6 +64,8 @@ function renderTop() {
   const stopped = S.controls.emergency_stop;
   const btn = $("stop-btn");
   btn.setAttribute("aria-pressed", String(stopped));
+  btn.disabled = S.preview === "partial";
+  btn.title = btn.disabled ? "Read-only view: the stop control connects to the gateway in Phase 7" : "";
   setText("stop-label", stopped ? "TRADING STOPPED · CLEAR…" : "STOP ALL NEW TRADING");
   $("hero-status").parentElement.querySelector(".live-dot").dataset.state = stopped ? "stopped" : "live";
   const scanning = S.scanner.length;
@@ -176,7 +179,7 @@ function renderControls() {
     const b = $(`ctl-${i}`);
     b.setAttribute("aria-checked", String(on));
     setText(`ctl-s-${i}`, on ? "ON" : "OFF");
-    b.disabled = c.key === "authorized_today" && S.controls.emergency_stop && !on;
+    b.disabled = S.preview === "partial" || (c.key === "authorized_today" && S.controls.emergency_stop && !on);
   });
 }
 async function onToggle(c, i) {
@@ -287,7 +290,8 @@ function renderShadow() {
 
 // ---------- positions, activity, summary ----------
 function renderPositions() {
-  setHTML($("positions"), S.positions.length ? "" :
+  setHTML($("positions"), S.positions.length ? `<ul class="plain">${S.positions.map(p =>
+    `<li>${p.qty} × ${esc(String(p.side).toUpperCase())} · ${esc(p.market)} · cost basis ${money(p.basis_c)}</li>`).join("")}</ul>` :
     `<p class="empty">No open real positions. ATLAS will only open one after you authorize today's budget${S.controls.require_approval ? " and approve the trade" : ""}.</p>`);
 }
 let activityAll = false;
@@ -405,7 +409,13 @@ async function refresh() {
     const r = await fetch("/api/state", { cache: "no-store" });
     S = await r.json();
     failures = 0;
-    setText("env-chip", S.preview ? "Preview · sample data" : "Connected");
+    const partial = S.preview === "partial";
+    setText("env-chip", partial ? "Safety data: real · markets: sample" : S.preview ? "Preview · sample data" : "Connected");
+    $("preview-note").innerHTML = S.real_error
+      ? `<strong>Problem:</strong> ${esc(S.real_error)}`
+      : partial
+        ? "<strong>Read-only view of your ATLAS data.</strong> Budget, limits, system health, authorization status, positions and activity are real. The market scanner, correlation and shadow trading panels are still sample data. Controls are read-only until the dashboard connects to the execution gateway (Phase 7)."
+        : "<strong>Preview.</strong> Everything below is sample data. This dashboard is not connected to Kalshi or Alpaca and cannot place orders.";
     renderTop(); renderAccount(); renderBudget(); renderLimits(); renderHealth(); renderControls();
     renderApproval(); renderScanner(); renderCorrelation(); renderShadow(); renderPositions();
     renderActivity(); renderSummary(); renderFeed();

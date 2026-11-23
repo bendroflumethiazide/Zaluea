@@ -1,2 +1,6 @@
-# ATLAS dashboard preview uses only the Python standard library, plus:
-tzdata>=2024.1   # time-zone data for America/New_York on Windows
+# ATLAS uses the Python standard library, plus:
+tzdata>=2024.1        # time-zone data for America/New_York on Windows
+cryptography>=42      # Ed25519 signatures for the shadow risk manager
+
+# For running the test suite:
+pytest>=8
