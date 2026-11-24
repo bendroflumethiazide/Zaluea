@@ -1,7 +1,10 @@
 """Backtest the stock/ETF rules fixed in docs/09-stocks-plan.md, on Alpaca daily bars.
 
-    python research/stocks_backtest.py                 download (needs your Alpaca PAPER keys), then report
+    python research/stocks_backtest.py --alpaca-key-id ID --alpaca-secret-file PATH    download, then report
     python research/stocks_backtest.py --offline       report from the files already downloaded
+
+The key options can be left out if they are saved in %USERPROFILE%/.atlas/config.json
+({"alpaca_key_id": "...", "alpaca_secret_file": "..."}).
 
 Reads only market data: it cannot place orders. Keys come from the settings check_connection saved
 (the key ID and the PATH to the secret file; the secret itself is never printed or stored here).
@@ -27,14 +30,16 @@ DOWNLOAD_FROM = "2015-03-02"          # 200 trading days of warm-up before 2016-
 EARLY, RECENT = ("2016-01-04", "2021-12-31"), ("2022-01-01", "2100-01-01")
 
 
-def download(symbols: list[str]) -> None:
+def download(symbols: list[str], key_id: str | None = None, secret_file: str | None = None) -> None:
     from atlas.check_connection import load_config
     from atlas.exchange.alpaca import AlpacaClient
     cfg = load_config()
-    if not cfg.get("alpaca_key_id") or not cfg.get("alpaca_secret_file"):
-        raise SystemExit("No Alpaca paper keys saved yet. Follow docs/04-connecting.md (Alpaca part), "
-                         "then run this again.")
-    client = AlpacaClient(cfg["alpaca_key_id"], Path(cfg["alpaca_secret_file"]).read_text().strip(), paper=True)
+    key_id = key_id or cfg.get("alpaca_key_id")
+    secret_file = secret_file or cfg.get("alpaca_secret_file")
+    if not key_id or not secret_file:
+        raise SystemExit("No Alpaca paper keys given. Run with --alpaca-key-id and --alpaca-secret-file "
+                         "(see docs/04-connecting.md, Alpaca part).")
+    client = AlpacaClient(key_id, Path(secret_file).expanduser().read_text().strip(), paper=True)
     end = (date.today() - timedelta(days=1)).isoformat()
     DATA.mkdir(parents=True, exist_ok=True)
     for sym in symbols:
@@ -104,9 +109,11 @@ def report(symbols: list[str]) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--offline", action="store_true", help="use the files already downloaded")
+    ap.add_argument("--alpaca-key-id", help="Alpaca PAPER key id (read-only use: market data only)")
+    ap.add_argument("--alpaca-secret-file", help="file holding the Alpaca PAPER secret key")
     a = ap.parse_args(argv)
     if not a.offline:
-        download(SYMBOLS)
+        download(SYMBOLS, a.alpaca_key_id, a.alpaca_secret_file)
     text = report(SYMBOLS)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(text, encoding="utf-8")
