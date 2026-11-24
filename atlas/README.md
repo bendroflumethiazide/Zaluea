@@ -13,7 +13,8 @@ Priorities, in order: **capital preservation first, intelligent trading second, 
 | 3. Market data | ✅ Done: real Kalshi + Alpaca clients, BTC reference, esports identity; see [`docs/05-phase3-report.md`](docs/05-phase3-report.md) |
 | 4. Analytics | ✅ Done ([report](docs/07-phase4-report.md)): 4-month backtest found no reliable edge; that strategy is retired |
 | 5. Shadow trading | ◐ Built and tested ([report](docs/08-phase5-report.md)); collecting live evidence |
-| 6–10 | Not started |
+| 6. Stocks and ETFs | ◐ Rules and pass/fail tests fixed in advance ([plan](docs/09-stocks-plan.md)); backtest built and tested, waiting for one run on your PC (`python research/stocks_backtest.py`) |
+| 7–10 | Not started |
 
 **Run everything with one click (no keys, cannot trade):** double-click `windows\Start-ATLAS.cmd`.
 It starts the market scanner, the shadow-trading test and the Hysilens dashboard, and opens the dashboard.
@@ -85,7 +86,7 @@ atlas/
                 shadow/ (simulator, accounts, journal, evidence),
                 exchange/ (fake, kalshi, alpaca), marketdata/ (btc, esports), check_connection
   windows/      Start-ATLAS.cmd and the start-at-login scripts
-  tests/        263 automated tests (Part 25 acceptance tests, clients, simulators)
+  tests/        273 automated tests (Part 25 acceptance tests, clients, simulators)
   docs/         audit, plan, phase reports
   dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```

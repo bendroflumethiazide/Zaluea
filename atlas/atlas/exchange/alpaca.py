@@ -140,6 +140,23 @@ class AlpacaClient:
                 "ask": None if ask in ("0", "0.0") else ask, "bid_size": int(q["bs"]), "ask_size": int(q["as"]),
                 "ts": _iso(q["t"]), "received_ts": self.clock(), "source": f"alpaca:{feed}"}
 
+    def daily_bars(self, symbol: str, start: str, end: str | None = None, adjustment: str = "all",
+                   feed: str = "sip", max_pages: int = 50) -> list[dict]:
+        """Daily OHLC bars, oldest first, prices as exact text. adjustment="all" adjusts for splits, dividends
+        and spin-offs (what a holder actually earned). The free plan serves SIP history older than 15 minutes."""
+        out, token = [], None
+        for _ in range(max_pages):
+            d = self._request("GET", DATA, f"/v2/stocks/{urllib.parse.quote(symbol)}/bars",
+                              {"timeframe": "1Day", "start": start, "end": end, "adjustment": adjustment,
+                               "feed": feed, "limit": 10000, "page_token": token, "sort": "asc"})
+            for b in d.get("bars") or []:
+                out.append({"date": b["t"][:10], "o": str(b["o"]), "h": str(b["h"]), "l": str(b["l"]),
+                            "c": str(b["c"]), "v": int(float(str(b["v"])))})
+            token = d.get("next_page_token")
+            if not token:
+                return out
+        raise ExchangeError(f"{symbol}: more than {max_pages} pages of bars; narrow the date range")
+
     def get_order_by_client_id(self, client_order_id: str) -> dict | None:
         try:
             return self._request("GET", self.trading, "/v2/orders:by_client_order_id",
