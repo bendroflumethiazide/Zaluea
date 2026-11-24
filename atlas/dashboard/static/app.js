@@ -316,7 +316,7 @@ function renderShadow() {
     : `<li class="muted">No simulated positions.</li>`);
   setText("shadow-vs", `Shadow vs live: ${s.vs_live}`);
   renderEvidence(s.evidence);
-  renderSupervisor(s.supervisor);
+  renderSupervisor(S.supervisor);
 }
 const VERDICT_CHIP = { "PASS": "chip-good", "NOT YET": "chip-warn", "FAIL": "chip-bad" };
 function renderEvidence(ev) {

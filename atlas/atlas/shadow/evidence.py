@@ -71,6 +71,9 @@ def evaluate(research_totals: dict, research: dict, as_live: dict | None) -> dic
     ]
     if all(r["passed"] for r in rules):
         verdict, why = "PASS", "Every rule is met. This allows a proposal only; live trading stays off until you enable it."
+    elif not rules[3]["passed"]:             # broken books make every other number meaningless: say so now
+        verdict, why = "FAIL", ("The as_live books do not reconcile, so these results are not reliable. "
+                                "This needs fixing before any more evidence counts.")
     elif not rules[0]["passed"]:
         verdict, why = "NOT YET", f"Too few settled fills to judge ({n} of {MIN_SETTLED}). Keep it running."
     else:

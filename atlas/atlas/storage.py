@@ -4,11 +4,15 @@ from __future__ import annotations
 import contextlib
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 
 class StorageError(RuntimeError):
     """Raised when durable state cannot be read or written. Callers fail closed."""
+
+
+ALREADY_RUNNING_EXIT = 75     # process exit code: another copy already holds this data folder's lock
 
 
 def connect(path: str | Path, readonly: bool = False, must_exist: bool = True) -> sqlite3.Connection:
@@ -30,6 +34,25 @@ def connect(path: str | Path, readonly: bool = False, must_exist: bool = True) -
         return con
     except sqlite3.Error as e:
         raise StorageError(f"Cannot open {p.name}: {e}") from e
+
+
+def write_atomic(path: str | Path, text: str, attempts: int = 20, delay_s: float = 0.05) -> None:
+    """Write a file so readers only ever see the old or the new content.
+
+    On Windows, replacing a file fails (PermissionError) while another process happens to have it open,
+    for example the dashboard reading it at that instant. That is transient, so retry briefly before
+    giving up; the caller decides whether a final failure matters."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for i in range(attempts):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay_s)
 
 
 @contextlib.contextmanager

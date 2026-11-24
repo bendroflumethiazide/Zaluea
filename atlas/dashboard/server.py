@@ -98,7 +98,11 @@ def main():
     mimetypes.add_type("image/webp", ".webp")
     mimetypes.add_type("text/javascript", ".js")
     threading.Thread(target=ticker, daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    except OSError as e:
+        print(f"Port {a.port} is already in use (is another dashboard running?): {e}", flush=True)
+        raise SystemExit(75)          # same code as atlas.storage.ALREADY_RUNNING_EXIT
     mode = f"safety data from {a.data} (read-only)" if a.data else "preview, sample data"
     print(f"Hysilens dashboard ({mode}): http://127.0.0.1:{a.port}  (Ctrl+C to stop)")
     srv.serve_forever()

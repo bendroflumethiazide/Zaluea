@@ -85,7 +85,7 @@ atlas/
                 shadow/ (simulator, accounts, journal, evidence),
                 exchange/ (fake, kalshi, alpaca), marketdata/ (btc, esports), check_connection
   windows/      Start-ATLAS.cmd and the start-at-login scripts
-  tests/        254 automated tests (Part 25 acceptance tests, clients, simulators)
+  tests/        263 automated tests (Part 25 acceptance tests, clients, simulators)
   docs/         audit, plan, phase reports
   dashboard/    server.py, sample_state.py, real_state.py, static/ (HTML, CSS, JS, feed image)
 ```

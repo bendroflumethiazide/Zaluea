@@ -31,12 +31,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .notify import Notifier, deliver_outbox
-from .storage import InstanceLock, StorageError
+from .notify import Notifier, deliver_outbox, file_log
+from .storage import ALREADY_RUNNING_EXIT, InstanceLock, StorageError, write_atomic
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]       # the folder that holds atlas/ and dashboard/
 MIN_BACKOFF_S, MAX_BACKOFF_S, HEALTHY_AFTER_S = 2.0, 300.0, 600.0
 ALERT_EVERY_S = 1800.0
+WAKE_GAP_S = 30.0          # a pass this late means the computer slept: restart the freeze clocks
 LOG_BYTES, LOG_KEEP = 5_000_000, 3
 
 
@@ -85,6 +86,14 @@ def daily_summary(data: Path, now: float) -> tuple[str, str, str]:
         sd = json.loads(path.read_text())
     except (OSError, ValueError):
         return "warning", "Shadow test: no results yet", "The shadow test has not written any results. Is it running?"
+    try:
+        return _summarize(sd, now)
+    except (KeyError, TypeError, IndexError, AttributeError, ValueError):
+        return ("warning", "Shadow test: results file unreadable",
+                "sim/shadow.json is damaged or from an older version. It is rewritten on the next update.")
+
+
+def _summarize(sd: dict, now: float) -> tuple[str, str, str]:
     accts = sd.get("accounts") or []
     bad = [a["account"] for a in accts if not a.get("reconciled", True)]
     if bad:
@@ -95,7 +104,7 @@ def daily_summary(data: Path, now: float) -> tuple[str, str, str]:
     ev = next(iter((sd.get("evidence") or {}).values()), None)
     research = next((a for a in accts if a["account"].endswith("/research") and a["order_type"] == "maker"), None)
     if ev is None or research is None:
-        return "info", "Shadow test running", f"No resting-order results yet.{stale}"
+        return ("warning" if stale else "info"), "Shadow test running", f"No resting-order results yet.{stale}"
     body = (f"{ev['rules'][0]['value']} settled fills. Simulated P&L {research['pnl_total']}. "
             f"Verdict: {ev['verdict']}.{stale}")
     return ("warning" if stale else "info"), "Shadow test daily summary (simulated)", body
@@ -103,17 +112,20 @@ def daily_summary(data: Path, now: float) -> tuple[str, str, str]:
 
 class Supervisor:
     def __init__(self, data: str | Path, children: list[Child], notifier: Notifier | None = None,
-                 clock=time.time, summary_at: str = "21:00", local_now=datetime.now, spawn=subprocess.Popen):
+                 clock=time.time, summary_at: str = "21:00", local_now=datetime.now, spawn=subprocess.Popen,
+                 monotonic=time.monotonic):
         self.data = Path(data)
         self.logs = self.data / "logs"
         self.children = children
         self.notifier = notifier or Notifier()
-        self.clock, self.local_now, self.spawn = clock, local_now, spawn
+        self.clock, self.local_now, self.spawn, self.monotonic = clock, local_now, spawn, monotonic
         h, m = (int(x) for x in summary_at.split(":"))
         self.summary_at = (h, m)
         self.lock = InstanceLock(self.data / "supervisor.lock")
         self.state_path = self.logs / "supervisor_state.json"
         self._last_outbox = 0.0
+        self._last_poll_mono: float | None = None
+        self._summary_day: str | None = None
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -149,15 +161,35 @@ class Supervisor:
         return lg
 
     # ------------------------------------------------------------------ one pass
+    def safe_poll(self) -> None:
+        """poll(), but an unexpected error is reported and supervision continues: the supervisor must not
+        take the whole stack down because of one bad pass."""
+        try:
+            self.poll()
+        except Exception as e:
+            self.notifier.send("warning", "ATLAS supervisor hit an error and carried on",
+                               f"{type(e).__name__}: {e}", key="poll-error", every_s=ALERT_EVERY_S)
+
     def poll(self) -> None:
         now = self.clock()
+        mono = self.monotonic()
+        if self._last_poll_mono is not None and mono - self._last_poll_mono > WAKE_GAP_S:
+            # The computer slept (or this process was paused). Heartbeats are old only because nothing ran:
+            # give every running process a fresh grace period instead of killing it as "frozen".
+            for c in self.children:
+                if c.proc is not None:
+                    c.started = now
+        self._last_poll_mono = mono
         for c in self.children:
             if c.proc is None:
                 if now >= c.next_start:
                     self._launch(c, now)
                 continue
             code = c.proc.poll()
-            if code is not None:
+            if code == ALREADY_RUNNING_EXIT:
+                self._ended(c, now, 0.0, "is already running outside this supervisor (another window, or a "
+                            "copy left from an earlier run)", "already running", wait=MAX_BACKOFF_S)
+            elif code is not None:
                 self._ended(c, now, now - c.started, f"exited with code {code}", "stopped")
             elif self._frozen(c, now):
                 c.proc.kill()
@@ -203,15 +235,20 @@ class Supervisor:
         hb = c.heartbeat()
         return hb is None or now - hb > c.stale_after_s
 
-    def _ended(self, c: Child, now: float, ran: float, why: str, verb: str) -> None:
-        c.backoff = MIN_BACKOFF_S if ran >= HEALTHY_AFTER_S else min(MAX_BACKOFF_S, c.backoff * 2)
+    def _ended(self, c: Child, now: float, ran: float, why: str, verb: str, wait: float | None = None) -> None:
+        """Schedule the restart: wait 2 s, then 4, 8 ... up to 5 minutes; back to 2 s after a healthy run."""
+        if ran >= HEALTHY_AFTER_S:
+            c.backoff = MIN_BACKOFF_S
+        if wait is None:
+            wait = c.backoff
+            c.backoff = min(MAX_BACKOFF_S, c.backoff * 2)
         c.proc, c.restarts, c.last_exit = None, c.restarts + 1, why
-        c.next_start = now + c.backoff
+        c.next_start = now + wait
         if c.logger:
             c.logger.info(f"--- {datetime.fromtimestamp(now):%Y-%m-%d %H:%M:%S} {why}; "
-                          f"restarting in {c.backoff:.0f} s ---")
+                          f"trying again in {wait:.0f} s ---")
         self.notifier.send("warning", f"{c.label or c.name} {verb}",
-                           f"It {why}. Restarting automatically in {c.backoff:.0f} s. Log: logs/{c.name}.log",
+                           f"It {why}. Trying again automatically in {wait:.0f} s. Log: logs/{c.name}.log",
                            key=f"down-{c.name}", every_s=ALERT_EVERY_S)
 
     # ------------------------------------------------------------------ daily summary
@@ -226,15 +263,17 @@ class Supervisor:
         if (local.hour, local.minute) < self.summary_at:
             return
         today = local.strftime("%Y-%m-%d")
+        if self._summary_day == today:          # remembered in memory too, so a failed save can't repeat it
+            return
         st = self._state()
         if st.get("last_summary") == today:
+            self._summary_day = today
             return
+        self._summary_day = today
         level, title, body = daily_summary(self.data, now)
         self.notifier.send(level, title, body)
         st["last_summary"] = today
-        tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(st))
-        tmp.replace(self.state_path)
+        write_atomic(self.state_path, json.dumps(st))
 
     # ------------------------------------------------------------------ status for the dashboard
     def _write_status(self) -> None:
@@ -244,15 +283,16 @@ class Supervisor:
              "pid": c.proc.pid if c.proc else None, "uptime_s": int(now - c.started) if c.proc else 0,
              "restarts": c.restarts, "last_exit": c.last_exit,
              "next_start_in_s": None if c.proc else max(0, int(c.next_start - now))} for c in self.children]}
-        tmp = self.logs / "supervisor.json.tmp"
-        tmp.write_text(json.dumps(out))
-        tmp.replace(self.logs / "supervisor.json")
+        try:
+            write_atomic(self.logs / "supervisor.json", json.dumps(out))
+        except OSError:
+            pass            # the dashboard just sees a status one second older; supervision goes on
 
     def run(self, interval: float = 1.0) -> None:
         self.start()
         try:
             while True:
-                self.poll()
+                self.safe_poll()
                 time.sleep(interval)
         finally:
             self.stop()
@@ -268,7 +308,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     data = Path(a.data).expanduser()
     children = [c for c in default_children(data, a.port) if not a.only or c.name in a.only]
-    sup = Supervisor(data, children, summary_at=a.summary_at)
+    notifier = Notifier(log=file_log(data / "logs" / "notifications.log"), background=True)
+    sup = Supervisor(data, children, notifier=notifier, summary_at=a.summary_at)
     try:
         sup.start()
     except StorageError:
@@ -280,7 +321,7 @@ def main(argv=None) -> int:
         threading.Timer(4.0, webbrowser.open, args=(f"http://127.0.0.1:{a.port}",)).start()
     try:
         while True:
-            sup.poll()
+            sup.safe_poll()
             time.sleep(1.0)
     except KeyboardInterrupt:
         print("Stopping…", flush=True)

@@ -1,6 +1,6 @@
 # Phase 5 report: shadow trading
 
-**Status:** built and tested (the full suite of 254 tests passes), with a supervisor to keep it running. It now needs to run for weeks to
+**Status:** built and tested (the full suite of 263 tests passes), with a supervisor to keep it running. It now needs to run for weeks to
 collect live evidence. No real order was placed, and none can be: shadow trading has no key, no gateway and no
 order code.
 
@@ -152,7 +152,13 @@ needs no keys and never starts the execution gateway. To have it start by itself
   - a crash or freeze, at most once per 30 minutes per process;
   - anything the watchdog queued;
   - a **daily summary** at 21:00 local time (`--summary-at` changes it), showing settled fills out of 200, simulated P&L and the verdict.
-- **Shows its status** at the bottom of the Shadow trading panel. Only one supervisor can run per data folder.
+- **Shows its status** at the bottom of the Shadow trading panel.
+- **Allows only one copy per data folder** of each of the supervisor, the shadow test and the scanner. If one is already running, for example left over from a crash, the new supervisor reports it and checks again every 5 minutes instead of starting a duplicate. Two shadow runners on one journal would cancel each other's orders and double-count evidence.
+- **Handles sleep:** after the PC wakes, processes get a fresh grace period instead of being killed as "frozen".
+- **Never lets one bad pass stop everything:** an unexpected error is reported and supervision continues.
+- **Logs every notification** to `<data>\logs\notifications.log`. Toasts are shown on a background thread so they can't delay restarts. A backlog of older watchdog notes is summarized in one toast, not shown one by one.
+
+A code review of the first version found the problems these last points fix; each now has a test.
 
 The notification text is passed to Windows through environment variables, never pasted into a command, so a
 market name or error message cannot run commands. On anything other than Windows, notifications are printed

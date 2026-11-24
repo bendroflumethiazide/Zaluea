@@ -27,6 +27,7 @@ from ..marketdata.btc import BtcReference, recent_history
 from ..money import Money
 from ..proposal import Proposal, Quote
 from ..risk.primary import fee_multiplier_pct
+from ..storage import ALREADY_RUNNING_EXIT, InstanceLock, StorageError, write_atomic
 from ..strategies.base import MarketView, Series, Signal
 from ..strategies.crypto_flip import CryptoFlipFavorite
 from ..strategies.crypto_maker import CryptoMaker
@@ -162,9 +163,7 @@ class ShadowRunner:
                 self._decide(m, now, day)
         self._settle(now, day, notes)
         state = build_state(self, now, notes)
-        tmp = self.root / "shadow.json.tmp"
-        tmp.write_text(json.dumps(state, default=str))
-        tmp.replace(self.root / "shadow.json")
+        write_atomic(self.root / "shadow.json", json.dumps(state, default=str))
         return state
 
     def _journal_event(self, s, acct: SimAccount, ev: dict, day: str):
@@ -286,6 +285,12 @@ def main(argv=None):
         from .report import report_markdown
         print(report_markdown(a.data))
         return 0
+    lock = InstanceLock(Path(a.data) / SIM_DIRNAME / "shadow.lock")
+    try:
+        lock.acquire()          # two runners on one journal would cancel each other's orders and double-count
+    except StorageError:
+        print(f"Shadow trading is already running for {a.data}. Not starting a second one.", flush=True)
+        return ALREADY_RUNNING_EXIT
     r = ShadowRunner(a.data)
     print("SHADOW TRADING: simulated money only, live public data, no API keys.", flush=True)
     while True:

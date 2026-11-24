@@ -132,8 +132,9 @@ class RealState:
             snap["scanner_note"] = (f"Live scan {int(now - sd['ts'])} s ago. Model {sd['model']['version']}: "
                                     f"{sd['model']['scorecard']}")
         else:
-            snap["scanner_note"] = "Scanner not running (start: python -m atlas.scanner --data <folder>); sample rows shown"
+            snap["scanner_note"] = "Scanner not running (start everything with Start-ATLAS.cmd); sample rows shown"
         try:
+            snap["supervisor"] = self._supervisor(now)     # shown even when shadow results are missing
             snap["shadow"] = self._shadow(now) or snap["shadow"]
         except (KeyError, TypeError, ValueError):     # an older or damaged shadow.json: show the sample
             snap["shadow"]["vs_live"] = "shadow.json could not be read; sample shown"
@@ -190,7 +191,6 @@ class RealState:
                           "reconciled": a.get("reconciled", True)} for a in accts],
             "assumptions": sd.get("assumptions", {}),
             "evidence": next(({**ev, "strategy": k} for k, ev in (sd.get("evidence") or {}).items()), None),
-            "supervisor": self._supervisor(now),
             "vs_live": f"real account {real.get('pnl_total', '$0.00')} realized, kept separate. "
                        + real.get("note", ""),
         }

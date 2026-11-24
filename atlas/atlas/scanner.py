@@ -26,6 +26,7 @@ from .marketdata.btc import BtcReference, recent_history
 from .marketdata.esports import identify
 from .money import Money
 from .risk.primary import fee_multiplier_pct
+from .storage import ALREADY_RUNNING_EXIT, InstanceLock, StorageError, write_atomic
 from .strategies.base import MarketView, Series, Signal
 from .strategies.crypto_flip import CryptoFlipFavorite
 
@@ -113,9 +114,7 @@ class Scanner:
                "reference": cents(self.ref_points[-1][1]) / 100 if self.ref_points else None,
                "model": {"name": self.strategy.name, "version": self.strategy.version,
                          "scorecard": sc.summary(), "validated": sc.validated}}
-        tmp = self.dir / "scanner.json.tmp"
-        tmp.write_text(json.dumps(out))
-        tmp.replace(self.dir / "scanner.json")
+        write_atomic(self.dir / "scanner.json", json.dumps(out))
         return out
 
     def _crypto_row(self, ticker: str, now: float, reference: Series, ref_ok: bool, ref_reason: str) -> dict:
@@ -241,11 +240,20 @@ def main(argv=None):
         from .exchange.alpaca import AlpacaClient
         alpaca = AlpacaClient(key_id, Path(secret_file).read_text().strip(), paper=True)
         print(f"Alpaca PAPER quotes enabled (key ...{key_id[-4:]}, read-only use)", flush=True)
+    lock = InstanceLock(Path(a.data) / "scanner.lock")
+    try:
+        lock.acquire()
+    except StorageError:
+        print(f"A scanner is already running for {a.data}. Not starting a second one.", flush=True)
+        return ALREADY_RUNNING_EXIT
     s = Scanner(a.data, alpaca=alpaca)
     while True:
-        out = s.scan_once()
-        print(f"{time.strftime('%H:%M:%S')} scanned {len(out['rows'])} markets; model: {out['model']['scorecard']}",
-              flush=True)
+        try:
+            out = s.scan_once()
+            print(f"{time.strftime('%H:%M:%S')} scanned {len(out['rows'])} markets; "
+                  f"model: {out['model']['scorecard']}", flush=True)
+        except Exception as e:              # a data hiccup must not end the scanner; the supervisor watches it
+            print(f"{time.strftime('%H:%M:%S')} scan failed: {type(e).__name__}: {e}", flush=True)
         if a.once:
             return 0
         time.sleep(a.interval)

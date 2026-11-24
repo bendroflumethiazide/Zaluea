@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import base64
 import os
+import queue
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -44,45 +46,99 @@ def windows_toast(title: str, body: str, run=subprocess.run) -> bool:
 
 
 class Notifier:
-    """send() never raises: a notification problem must not stop the thing that is reporting a problem."""
+    """Every notification is written to the log first; the log is the record. The toast is a best-effort
+    extra that is never retried.
 
-    def __init__(self, toast=None, log=print, clock=time.time):
+    send() never raises: a notification problem must not stop the thing that is reporting a problem.
+    With background=True, toasts are shown on a worker thread, so a slow or hanging PowerShell can never
+    delay the caller (the supervisor keeps restarting and freeze-checking meanwhile). If more than
+    QUEUE_MAX toasts are waiting, further ones are skipped (they are still logged)."""
+
+    QUEUE_MAX = 20
+
+    def __init__(self, toast=None, log=print, clock=time.time, background: bool = False):
         self.toast = toast if toast is not None else (windows_toast if os.name == "nt" else None)
         self.log, self.clock = log, clock
         self._last: dict[str, float] = {}
+        self._queue: queue.Queue | None = None
+        if background and self.toast is not None:
+            self._queue = queue.Queue(maxsize=self.QUEUE_MAX)
+            threading.Thread(target=self._worker, daemon=True, name="atlas-toasts").start()
 
     def send(self, level: str, title: str, body: str, *, key: str | None = None, every_s: float = 0) -> bool:
-        """Show a notification. With key/every_s, the same key is shown at most once per every_s seconds."""
+        """Log and show a notification. Returns False only when suppressed: the same key at most once per
+        every_s seconds."""
         now = self.clock()
         if key is not None and now - self._last.get(key, float("-inf")) < every_s:
             return False
         if key is not None:
             self._last[key] = now
+        self._log(f"[{level.upper()}] {title}: {body}")
+        if self.toast is None:
+            return True
+        if self._queue is not None:
+            try:
+                self._queue.put_nowait((title, body))
+            except queue.Full:
+                self._log("(toast skipped: too many waiting)")
+        else:
+            self._show(title, body)
+        return True
+
+    def _show(self, title: str, body: str) -> None:
         try:
-            self.log(f"{time.strftime('%H:%M:%S')} [{level.upper()}] {title}: {body}")
+            ok = bool(self.toast(title, body))
+        except Exception:
+            ok = False
+        if not ok:
+            self._log(f"(Windows notification could not be shown: {title})")
+
+    def _worker(self) -> None:
+        while True:
+            title, body = self._queue.get()
+            self._show(title, body)
+
+    def _log(self, line: str) -> None:
+        try:
+            self.log(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}")
         except Exception:
             pass
-        shown = False
-        if self.toast is not None:
-            try:
-                shown = bool(self.toast(title, body))
-            except Exception:
-                shown = False
-        return shown or self.toast is None
+
+
+def file_log(path: Path):
+    """A log function for Notifier: prints the line and appends it to `path`."""
+    def write(line: str) -> None:
+        print(line, flush=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    return write
+
+
+OUTBOX_SHOW_MAX = 3
 
 
 def deliver_outbox(health_db: Path, notifier: Notifier) -> int:
-    """Show every queued notification (e.g. from the watchdog) once, then mark it delivered."""
+    """Deliver every queued notification (e.g. from the watchdog) once, and mark it delivered.
+
+    Each one is logged. If many have piled up (for example from before the supervisor existed), only the
+    newest OUTBOX_SHOW_MAX are shown individually, plus one notification saying how many older ones went
+    to the log, instead of a flood of pop-ups."""
     if not Path(health_db).exists():
         return 0
     from .health import HealthBoard
     hb = HealthBoard(health_db)
     try:
-        n = 0
-        for note in hb.pending_notifications():
-            if notifier.send(note["level"], note["title"], note["body"], key=f"outbox-{note['id']}", every_s=300):
+        pending = hb.pending_notifications()
+        older, newest = pending[:-OUTBOX_SHOW_MAX], pending[-OUTBOX_SHOW_MAX:]
+        if older:
+            for note in older:
+                notifier._log(f"[{note['level'].upper()}] (earlier) {note['title']}: {note['body']}")
                 hb.mark_delivered(note["id"])
-                n += 1
-        return n
+            notifier.send("warning", f"{len(older)} earlier ATLAS notifications",
+                          "They were written to the notifications log in the logs folder.")
+        for note in newest:
+            notifier.send(note["level"], note["title"], note["body"])
+            hb.mark_delivered(note["id"])
+        return len(pending)
     finally:
         hb.con.close()
